@@ -13,9 +13,18 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MPL-2.0" }
 dependencies = [
-    "mcp>=1.2.0",
-    "pydantic>=2.0.0",
-    "python-dotenv>=1.0.0",
+    # Pinned below 2.0 to match odoo-mcp-pro and squirrel-mcp. mcp 2.0 renamed
+    # FastMCP to MCPServer and removed mcp.server.fastmcp, so it is a rewrite of
+    # create_fastmcp_app -- and that function is the seam the admin package
+    # imports, so the three products move to 2.x together or not at all.
+    "mcp>=1.27.2,<2",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.2",
+    # Obsidian frontmatter is real YAML: nested maps, lists, dates. Hand-rolling
+    # a parser for it would mean silently misreading somebody's notes, so we
+    # read with PyYAML. Writing is deliberately NOT a re-dump -- see
+    # providers/filesystem/markdown.py:edit_frontmatter.
+    "PyYAML>=6.0",
 ]
 
 [project.scripts]
@@ -29,6 +38,24 @@ dev = [
     "ruff>=0.11.0",
     "ty>=0.0.1a1",
 ]
+
+# Mirrors squirrel-mcp's ty configuration, with one deliberate difference:
+# `unresolved-attribute` stays an error here. Squirrel silences it to live with
+# the tool-mixin pattern; this package declares the seam in
+# tools/vault/_base.py instead, so a real typo is still caught.
+[tool.ty.environment]
+python-version = "3.10"
+
+[tool.ty.src]
+include = ["knap_mcp/"]
+exclude = ["venv/", ".venv/", "build/", "dist/"]
+
+[tool.ty.rules]
+possibly-unresolved-reference = "warn"
+invalid-argument-type = "ignore"
+invalid-parameter-default = "error"
+invalid-return-type = "warn"
+invalid-assignment = "warn"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

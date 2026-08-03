@@ -1,6 +1,8 @@
 # Knap -- plan and setup
 
-Status: **draft for approval**. Nothing here is built yet.
+Status: **Phase 1 built and green.** The public package works standalone: nineteen
+tools over stdio or HTTP against a vault on disk, 309 tests, an MCP handshake
+smoke test. Phases 2 to 4 below are still the plan.
 
 ## What it is
 
@@ -427,11 +429,29 @@ Squirrel's layers, one per honest question:
 
 ## Phases
 
-**Phase 1 -- the public package, useful on its own.** `VaultProvider` protocol,
-filesystem backend, the nineteen tools, stdio and http transports, unit and
-integration suites, Dockerfile, CI. Done when `python -m knap_mcp` over stdio
-lets Claude Code read and write `pantalytics-second-brain` and the path safety
-suite is green. No Hetzner, no Postgres, no login.
+**Phase 1 -- the public package, useful on its own. DONE.** `VaultProvider`
+protocol, filesystem backend, the nineteen tools, stdio and streamable-http, 309
+tests, Dockerfile, CI. `python -m knap_mcp --vault PATH` serves a vault to Claude
+Code today, and `scripts/mcp_smoke.py` drives the server as a subprocess through
+a real MCP handshake.
+
+Five things the tests found that the design had wrong, all fixed and pinned:
+
+* `[[#Log]]` was read as a link to a note named "#Log", so every note with a
+  table of contents reported a broken link.
+* `[text](#section)` grew a tag per entry, for the same reason.
+* The index was walked with `include_hidden=False`, which meant
+  `include_hidden=True` on a search had nothing to find.
+* `[[index]]` inside a subfolder resolved to the vault-root `index.md` instead of
+  the sibling.
+* A move "relinked" notes whose links were already correct: identical bytes, a
+  bumped mtime, and a result claiming we touched files we had not.
+
+Two things left undone on purpose, both flagged rather than hidden: the Dockerfile
+and its CI job are written but **unverified**, because this sandbox has no Docker
+daemon; and the `--check` run against the real `pantalytics-second-brain` is a
+local step, since pulling a private second brain into a build sandbox is not a
+thing to do casually.
 
 **Phase 2 -- the phone, without any sync.** `knap-mcp-admin`: Postgres,
 Zitadel login, the multi-tenant handler, the pages, the git transport for

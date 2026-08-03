@@ -17,13 +17,14 @@ install: ## Create venv and install the package with dev extras
 	uv pip install -e ".[dev]"
 
 .PHONY: lint
-lint: ## Run ruff + ty
-	$(RUFF) check knap_mcp tests
+lint: ## Run ruff + ty + the line budget
+	$(RUFF) check knap_mcp tests scripts
 	$(TY) check
+	$(PY) scripts/check_max_lines.py
 
 .PHONY: format
 format: ## Apply ruff formatting
-	$(RUFF) format knap_mcp tests
+	$(RUFF) format knap_mcp tests scripts
 
 .PHONY: test
 test: ## Unit tests (fake provider, no filesystem)
@@ -33,11 +34,28 @@ test: ## Unit tests (fake provider, no filesystem)
 test-int: ## Integration tests against a real seeded vault in a tmpdir
 	$(PYTEST) -m integration -q
 
+.PHONY: smoke
+smoke: ## Full MCP handshake over stdio against a throwaway vault
+	$(PY) scripts/mcp_smoke.py
+
+.PHONY: check
+check: ## Open a vault and report what is in it (VAULT=/path/to/vault)
+	$(PY) -m knap_mcp --vault "$(VAULT)" --check
+
+.PHONY: docker-build
+docker-build: ## Build the container image
+	docker build -t knap-mcp:latest .
+
 .PHONY: test-all
 test-all: ## Everything CI runs
 	$(MAKE) lint
+	$(MAKE) format-check
 	$(MAKE) test
-	$(MAKE) test-int
+	$(MAKE) smoke
+
+.PHONY: format-check
+format-check: ## Fail if the tree is not formatted
+	$(RUFF) format --check knap_mcp tests scripts
 
 .PHONY: clean
 clean: ## Remove caches

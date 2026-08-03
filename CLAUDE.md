@@ -23,8 +23,11 @@ patterns and it reuses them deliberately -- read
 [docs/plan.md](docs/plan.md) before designing anything new here, because most of
 it is already decided by those two.
 
-**Nothing is implemented yet.** `docs/plan.md` is the plan and the phase list;
-this file describes the shape the code is being built into.
+**Phase 1 is built and green**: the `VaultProvider` protocol, the filesystem
+backend, all nineteen `vault_*` tools, stdio and streamable-http transports, 309
+tests, and an MCP handshake smoke test that drives the server as a subprocess.
+`docs/plan.md` holds the phase list and what is still ahead (the hosted layer,
+CouchDB sync, metering).
 
 ## Design principles
 
@@ -64,9 +67,16 @@ this file describes the shape the code is being built into.
 - `providers/protocol.py` -- `VaultProvider` (typing.Protocol) plus
   transport-neutral dataclasses. Every backend satisfies it.
 - `providers/filesystem/` -- the only place that knows about the filesystem.
-  `paths.py` (confinement), `markdown.py` (frontmatter, wikilinks, headings,
-  atomic write), `index.py` (lazy link/tag/property index, invalidated on mtime,
-  never rebuilt per call), `search.py`, `provider.py`.
+  `paths.py` (confinement), `markdown.py` (scanning: links, headings, tags,
+  atomic write, revs), `frontmatter.py` (writing properties without rewriting the
+  block), `index.py` (lazy link/tag/property index, invalidated on mtime, never
+  rebuilt per call), `search.py`, `periodic.py` (daily notes from the vault's own
+  settings), `writes.py` (the write half, as a mixin), `provider.py`.
+- **The index holds hidden notes and the lookups exclude them.** Indexing with
+  `include_hidden=False` meant `include_hidden=True` on a search had nothing to
+  find, because the notes were never there. So the walk takes everything, and
+  link resolution, backlinks and tag counts skip dot paths: a link must not
+  resolve into `.trash`, and a deleted note's tags are not the vault's tags.
 - **Wikilink resolution is Obsidian's, not ours.** `[[Note]]` resolves by
   shortest unique path, honours `aliases:` frontmatter, and carries `#heading`
   and `^block` anchors and `![[embed]]` form. A move that does not rewrite
@@ -107,7 +117,14 @@ The admin package subclasses/imports these -- rename only in coordination with i
 - Tools never import a concrete backend -- only `providers.protocol`.
 - Secrets only via env / `.env` (gitignored). No hardcoded fallbacks.
 - Keep filesystem code out of the tool layer.
-- **Max ~500 lines per Python file.** Split into mixins like `tools/vault/*`.
+- **Max 500 lines per Python file**, enforced by `scripts/check_max_lines.py` in
+  CI. Extract a module rather than raising the limit. No baseline and no
+  exemptions: this package starts under the budget, so going over is an error
+  rather than a ratchet (odoo-mcp-pro needs the ratchet, we do not).
+- The tool mixins declare their seam in `tools/vault/_base.py`, so `ty` resolves
+  `self._get_provider` and a typo like `self._trak_usage` is still an error.
+  squirrel-mcp switches `unresolved-attribute` off instead; that also hides the
+  typo.
 - **No em-dashes in user-facing text.** Use a hyphen, comma, or period.
 - **User-facing copy must read as human-written.** Run the `humanizer` skill over
   any UI text, tool description or handshake instruction before shipping it.
@@ -122,9 +139,10 @@ The admin package subclasses/imports these -- rename only in coordination with i
 ```bash
 make install                    # uv venv + dev deps
 make lint                       # ruff + ty
-make test                       # unit tests (fake provider), no filesystem
-make test-int                   # integration: a real seeded vault in a tmpdir
-make docker-smoke               # build image + full MCP handshake over http
+make test                       # the whole suite: fake provider + a seeded tmpdir vault
+make smoke                      # MCP handshake over stdio against a throwaway vault
+make check VAULT=~/vaults/mine  # open a real vault and report what is in it
+make docker-build               # build the container image
 make test-all
 ```
 
@@ -136,7 +154,7 @@ make test-all
 | `__main__.py` | CLI entry: argparse, transport selection |
 | `config.py` | `KnapConfig` dataclass + env loading |
 | `providers/protocol.py` | `VaultProvider` protocol + value objects |
-| `providers/filesystem/` | The filesystem backend: paths, markdown, index, search |
+| `providers/filesystem/` | The backend: paths, markdown, frontmatter, index, search, periodic, writes |
 | `providers/factory.py` | Backend selection from config |
 | `tools/handler.py` | `VaultToolHandler` (mixins) + `register_tools` |
 | `tools/vault/` | Tools as mixins: browse, query, read, write, organize, graph, periodic, attachments |
@@ -144,3 +162,6 @@ make test-all
 | `schemas.py` | Pydantic result models |
 | `knowledge.py` | Server instructions handed to the MCP client |
 | `usage.py` | Usage-tracking stub (full version in admin package) |
+| `scripts/mcp_smoke.py` | Real MCP client against the server as a subprocess |
+| `scripts/healthcheck.py` | Container liveness (a 4xx from /mcp is healthy) |
+| `scripts/check_max_lines.py` | The 500-line budget, enforced |

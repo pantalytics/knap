@@ -7,10 +7,9 @@ the links, tags and frontmatter intact.
 Knapping is the craft of striking flakes off obsidian to shape a blade. *Knap* is
 also Dutch for clever. Both fit.
 
-> **Status: planning.** The design is settled and written down in
-> [docs/plan.md](docs/plan.md); the implementation starts at Phase 1. What exists
-> in this repo today is the provider contract, the configuration, the FastMCP
-> factory and the handshake instructions -- the seams everything else hangs off.
+> **Status: works standalone.** Nineteen tools over stdio or HTTP against a vault
+> on disk, with 309 tests. The hosted, multi-tenant, phone-first half is Phase 2
+> and lives in [docs/plan.md](docs/plan.md).
 
 ## What it does
 
@@ -47,12 +46,35 @@ remotes, per-workspace isolation, usage diagnostics -- lives in the private
 Same split as [odoo-mcp-pro](https://github.com/pantalytics/odoo-mcp-pro) and
 [squirrel-mcp](https://github.com/pantalytics/squirrel-mcp).
 
-## Development
+## Try it
 
 ```bash
 make install
-make lint
-make test
+make check VAULT=~/vaults/your-vault    # opens the vault, reports what is in it
+```
+
+Then point a client at it. For Claude Desktop or Claude Code:
+
+```json
+{
+  "mcpServers": {
+    "knap": {
+      "command": "/path/to/knap-mcp/.venv/bin/python",
+      "args": ["-m", "knap_mcp", "--vault", "/path/to/your/vault"]
+    }
+  }
+}
+```
+
+Ask it "which tags are in my vault" to confirm.
+
+## Development
+
+```bash
+make lint     # ruff + ty + the line budget
+make test     # 309 tests: fake provider, plus a real seeded vault in a tmpdir
+make smoke    # a real MCP client driving the server as a subprocess
+make test-all
 ```
 
 Read [CLAUDE.md](CLAUDE.md) for the architecture and conventions, and
