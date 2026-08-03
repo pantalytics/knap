@@ -12,7 +12,7 @@ on a git-backed vault that diff is permanent.
 """
 
 SERVER_INSTRUCTIONS = """\
-This server exposes an Obsidian vault: plain markdown notes, their frontmatter
+Knap exposes an Obsidian vault: plain markdown notes, their frontmatter
 properties, their tags and the links between them. One tool family, `vault_*`.
 
 Orientation, in this order:

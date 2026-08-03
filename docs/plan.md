@@ -1,8 +1,10 @@
-# Obsidian Pro -- plan and setup
+# Knap -- plan and setup
 
 Status: **draft for approval**. Nothing here is built yet.
 
 ## What it is
+
+**Knap, for Obsidian.**
 
 An Obsidian vault, hosted on Hetzner, that an AI can reach over MCP **from a
 phone**. The vault is plain markdown on our disk; `/mcp` is the endpoint Claude,
@@ -19,7 +21,7 @@ Same open-core split as the other two:
 |---|---|---|
 | Odoo | `odoo-mcp-pro` | `odoo-mcp-pro-admin` |
 | Mail/cal/contacts | `squirrel-mcp` | `squirrel-mcp-admin` |
-| **Vaults** | **`obsidian-pro`** (this repo) | **`obsidian-pro-admin`** (Phase 2) |
+| **Vaults** | **`knap-mcp`** (this repo) | **`knap-mcp-admin`** (Phase 2) |
 
 This repo is the public package and is private today. It should flip to public
 at v0.1.0, the way the other two are, or the open-core story is a claim rather
@@ -114,15 +116,15 @@ This was read, not guessed. The list is here so a reviewer can check the claim.
 
 | Concern | Copied from | Landing here as |
 |---|---|---|
-| FastMCP construction seam | `squirrel_mcp/server.py:create_fastmcp_app` | `obsidian_mcp/server.py`, same signature |
-| Provider protocol as the swappable seam | `squirrel_mcp/providers/protocol.py` | `obsidian_mcp/providers/protocol.py`, `VaultProvider` |
-| Tools as mixins on one handler | `squirrel_mcp/tools/handler.py` + `tools/mail/*` | `obsidian_mcp/tools/handler.py` + `tools/vault/*` |
+| FastMCP construction seam | `squirrel_mcp/server.py:create_fastmcp_app` | `knap_mcp/server.py`, same signature |
+| Provider protocol as the swappable seam | `squirrel_mcp/providers/protocol.py` | `knap_mcp/providers/protocol.py`, `VaultProvider` |
+| Tools as mixins on one handler | `squirrel_mcp/tools/handler.py` + `tools/mail/*` | `knap_mcp/tools/handler.py` + `tools/vault/*` |
 | Per-tenant resolution hook | `MailToolHandler._get_provider` | `VaultToolHandler._get_provider` |
 | Usage hook (success path only) | `MailToolHandler._track_usage` | same name, same contract |
 | Authenticated subject contextvar | `tools._common._current_sub` | same |
-| Server instructions at handshake | `squirrel_mcp/knowledge.py` | `obsidian_mcp/knowledge.py` |
+| Server instructions at handshake | `squirrel_mcp/knowledge.py` | `knap_mcp/knowledge.py` |
 | Blocking calls off the event loop | `tools/_common.run_blocking` + per-provider lock | same |
-| Zitadel OIDC login + PKCE + end_session | `squirrel_mcp_admin/auth.py` | `obsidian_pro_admin/auth.py` |
+| Zitadel OIDC login + PKCE + end_session | `squirrel_mcp_admin/auth.py` | `knap_mcp_admin/auth.py` |
 | Bearer introspection (RFC 7662, 60s cache) | `squirrel_mcp_admin/oauth.py` | same file, renamed |
 | OAuth discovery + RFC 7591 DCR | `oauth_routes.py` / `dcr.py` | ported, same Zitadel apps |
 | AI connector catalog + live status | `connectors.py` | ported, copy changed |
@@ -148,13 +150,13 @@ Two places where Squirrel and odoo-mcp-pro disagree, and which one wins:
   `.claude/rules/*.md`; Squirrel keeps one long file. **odoo wins** once this
   repo's `CLAUDE.md` passes roughly 200 lines, not before.
 
-### Public package: `obsidian_mcp/`
+### Public package: `knap_mcp/`
 
 ```
-obsidian_mcp/
+knap_mcp/
   __main__.py            CLI: argparse, transport selection
-  server.py              create_fastmcp_app() + ObsidianMCPServer (stdio/http)
-  config.py              ObsidianConfig dataclass + env loading
+  server.py              create_fastmcp_app() + KnapMCPServer (stdio/http)
+  config.py              KnapConfig dataclass + env loading
   knowledge.py           SERVER_INSTRUCTIONS handed to the client at handshake
   schemas.py             pydantic result models
   error_handling.py      error hierarchy
@@ -163,7 +165,7 @@ obsidian_mcp/
   usage.py               no-op track_event stub; the real one lives in admin
   providers/
     protocol.py          VaultProvider (typing.Protocol) + value objects
-    factory.py           picks the backend from OBSIDIAN_VAULT_PROVIDER
+    factory.py           picks the backend from KNAP_VAULT_PROVIDER
     filesystem/
       provider.py        the only file that knows about the filesystem
       paths.py           vault-root confinement; every path goes through it
@@ -274,7 +276,7 @@ Seven design calls that look incidental and are not:
    handshake instructions is cheaper than a client inventing a query it cannot
    run.
 
-### Hosted layer: `obsidian-pro-admin/`
+### Hosted layer: `knap-mcp-admin/`
 
 File-for-file the Squirrel admin package, with mail replaced by vaults:
 
@@ -347,7 +349,7 @@ Squirrel's shape, plus what a notes product cannot skip.
 
 - One long-lived Caddy compose project holding 80/443 and both certificates.
 - Two app stacks, same image, same box, separate databases and volumes:
-  `obsidian-prod-*` and `obsidian-staging-*`. CouchDB joins each stack.
+  `knap-mcpd-*` and `obsidian-staging-*`. CouchDB joins each stack.
 - `deploy/remote-deploy.sh`: pull, `pg_dump`, up, health-check, roll back to the
   previous image if unhealthy.
 - Merge to `main` -> CI -> build -> staging -> `scripts/smoke_public.py` -> prod.
@@ -427,11 +429,11 @@ Squirrel's layers, one per honest question:
 
 **Phase 1 -- the public package, useful on its own.** `VaultProvider` protocol,
 filesystem backend, the nineteen tools, stdio and http transports, unit and
-integration suites, Dockerfile, CI. Done when `python -m obsidian_mcp` over stdio
+integration suites, Dockerfile, CI. Done when `python -m knap_mcp` over stdio
 lets Claude Code read and write `pantalytics-second-brain` and the path safety
 suite is green. No Hetzner, no Postgres, no login.
 
-**Phase 2 -- the phone, without any sync.** `obsidian-pro-admin`: Postgres,
+**Phase 2 -- the phone, without any sync.** `knap-mcp-admin`: Postgres,
 Zitadel login, the multi-tenant handler, the pages, the git transport for
 desktop, the data volume, restic, prod and staging, the deploy pipeline, and the
 Capture PWA. Done when Claude on the iPhone answers a question from our vault and
@@ -459,19 +461,30 @@ than a filesystem with OAuth, and odoo-mcp-pro already proved people use it.
 2. **Headless Obsidian on the server. Settled: no.** It would buy Dataview and
    Bases evaluation and cost a container, a GUI stream and a gigabyte of RAM per
    tenant, plus a licensing question. The architecture does not block it later.
-3. **Naming.** Obsidian's developer policy forbids a name suggesting
-   first-party, and "Obsidian Pro" reads exactly like a paid tier of Obsidian
-   itself. For our own use that is nothing; at the point of selling it is a
-   letter. Recommendation: **Knap** -- knapping is the craft of striking flakes
-   off obsidian to make a blade, and in Dutch *knap* means clever. Two languages,
-   both pointing at the product, four letters, and the obsidian reference is
-   specific without using the trademark. `Knap, for Obsidian`. Fallbacks:
-   **Memex** (Vannevar Bush's 1945 memory extender, the essay that invented this
-   product category) and **Lodestone**. `Scry` and `Jackdaw` were considered and
-   dropped: Scry AI is an enterprise knowledge-search company, and Jackdaw is a
-   Mac productivity app. A trademark-register check is a separate step and has
-   not been done.
+3. **Naming. Settled: Knap.** Knapping is the craft of striking flakes off
+   obsidian to shape a blade, and *knap* is Dutch for clever. Two languages, both
+   pointing at the product, four letters, and the obsidian reference is specific
+   without using the trademark. The tagline carries the rest: **Knap, for
+   Obsidian**. Obsidian's developer policy forbids a name suggesting a
+   first-party product, and "Obsidian Pro" read exactly like a paid tier of
+   Obsidian itself -- nothing for our own use, a letter at the point of selling.
+   `Scry` and `Jackdaw` were the runners-up and both are taken in adjacent
+   categories (Scry AI does enterprise knowledge search; Jackdaw is a Mac
+   productivity app); `Memex` and `Lodestone` stay as fallbacks.
    ([Obsidian developer policies](https://docs.obsidian.md/Developer+policies))
+
+   Landed in the code: distribution `knap-mcp`, package `knap_mcp`, FastMCP
+   server name `knap`, env prefix `KNAP_*`, config class `KnapConfig`, private
+   layer `knap-mcp-admin`. Exactly Squirrel's shape (`squirrel-mcp` /
+   `squirrel_mcp` / `SQUIRREL_*` / `squirrel-mcp-admin`). The tool prefix stays
+   `vault_*` rather than `knap_*`, for the same reason Squirrel's tools are
+   `mail_*`: the tools name what they touch, not who ships them.
+
+   **Two things left, both outside a commit.** The GitHub repo is still called
+   `obsidian-pro` and wants renaming to `knap-mcp` (GitHub redirects the old
+   remote, so nothing breaks in the meantime). And a trademark-register check has
+   not been done -- what was checked is whether the name is already used in an
+   adjacent category, which is not the same question.
 
 ## Sources
 

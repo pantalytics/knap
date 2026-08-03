@@ -3,10 +3,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["obsidian_mcp"]
+packages = ["knap_mcp"]
 
 [project]
-name = "obsidian-pro"
+name = "knap-mcp"
 version = "0.1.0"
 description = "MCP server over an Obsidian vault: read, search, write and relink plain markdown notes."
 readme = "README.md"
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-obsidian-pro = "obsidian_mcp.__main__:main"
+knap-mcp = "knap_mcp.__main__:main"
 
 [project.optional-dependencies]
 dev = [

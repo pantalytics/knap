@@ -1,7 +1,7 @@
-"""Configuration for the Obsidian Pro MCP server.
+"""Configuration for the Knap MCP server.
 
 Loads and validates environment variables (optionally from a .env file) into a
-single ``ObsidianConfig``. No hardcoded fallbacks: a missing vault path is a
+single ``KnapConfig``. No hardcoded fallbacks: a missing vault path is a
 config error, never a guessed directory. Guessing here would mean opening a
 directory the customer did not name, and on a hosted deployment that is somebody
 else's vault.
@@ -22,7 +22,7 @@ SUPPORTED_VAULT_PROVIDERS = ("filesystem",)
 
 
 @dataclass
-class ObsidianConfig:
+class KnapConfig:
     """Vault location plus MCP server settings."""
 
     # Backend selection
@@ -63,26 +63,26 @@ class ObsidianConfig:
 
         if self.vault_provider not in SUPPORTED_VAULT_PROVIDERS:
             raise ValueError(
-                f"Unknown OBSIDIAN_VAULT_PROVIDER: {self.vault_provider!r}. "
+                f"Unknown KNAP_VAULT_PROVIDER: {self.vault_provider!r}. "
                 f"Supported: {', '.join(sorted(SUPPORTED_VAULT_PROVIDERS))}"
             )
 
         if not self.vault_path:
-            raise ValueError("OBSIDIAN_VAULT_PATH is required (the vault directory)")
+            raise ValueError("KNAP_VAULT_PATH is required (the vault directory)")
 
         root = Path(self.vault_path).expanduser()
         if not root.is_dir():
-            raise ValueError(f"OBSIDIAN_VAULT_PATH is not a directory: {self.vault_path}")
+            raise ValueError(f"KNAP_VAULT_PATH is not a directory: {self.vault_path}")
 
         if self.port <= 0 or self.port > 65535:
-            raise ValueError("OBSIDIAN_MCP_PORT must be between 1 and 65535")
+            raise ValueError("KNAP_MCP_PORT must be between 1 and 65535")
 
         if self.default_limit <= 0:
-            raise ValueError("OBSIDIAN_MCP_DEFAULT_LIMIT must be positive")
+            raise ValueError("KNAP_MCP_DEFAULT_LIMIT must be positive")
         if self.max_limit <= 0:
-            raise ValueError("OBSIDIAN_MCP_MAX_LIMIT must be positive")
+            raise ValueError("KNAP_MCP_MAX_LIMIT must be positive")
         if self.default_limit > self.max_limit:
-            raise ValueError("OBSIDIAN_MCP_DEFAULT_LIMIT cannot exceed OBSIDIAN_MCP_MAX_LIMIT")
+            raise ValueError("KNAP_MCP_DEFAULT_LIMIT cannot exceed KNAP_MCP_MAX_LIMIT")
 
         valid_log_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if self.log_level.upper() not in valid_log_levels:
@@ -109,7 +109,7 @@ class ObsidianConfig:
         return self.vault_name or self.vault_root.name
 
     @classmethod
-    def from_env(cls, env_file: Optional[Path] = None) -> "ObsidianConfig":
+    def from_env(cls, env_file: Optional[Path] = None) -> "KnapConfig":
         return load_config(env_file)
 
 
@@ -123,7 +123,7 @@ def _get_int_env(key: str, default: int) -> int:
         raise ValueError(f"{key} must be a valid integer") from None
 
 
-def load_config(env_file: Optional[Path] = None) -> ObsidianConfig:
+def load_config(env_file: Optional[Path] = None) -> KnapConfig:
     """Load configuration from environment variables and an optional .env file."""
     if env_file:
         if not env_file.exists():
@@ -136,33 +136,33 @@ def load_config(env_file: Optional[Path] = None) -> ObsidianConfig:
         default_env = Path(".env")
         if default_env.exists():
             load_dotenv(default_env)
-        elif not os.getenv("OBSIDIAN_VAULT_PATH"):
+        elif not os.getenv("KNAP_VAULT_PATH"):
             raise ValueError(
-                "No .env file found and OBSIDIAN_VAULT_PATH not set in environment.\n"
+                "No .env file found and KNAP_VAULT_PATH not set in environment.\n"
                 "Create a .env file based on .env.example or set environment variables."
             )
 
-    return ObsidianConfig(
-        vault_provider=os.getenv("OBSIDIAN_VAULT_PROVIDER", "filesystem").strip() or "filesystem",
-        vault_path=os.getenv("OBSIDIAN_VAULT_PATH", "").strip(),
-        vault_name=os.getenv("OBSIDIAN_VAULT_NAME", "").strip(),
-        log_level=os.getenv("OBSIDIAN_MCP_LOG_LEVEL", "INFO").strip(),
-        default_limit=_get_int_env("OBSIDIAN_MCP_DEFAULT_LIMIT", 25),
-        max_limit=_get_int_env("OBSIDIAN_MCP_MAX_LIMIT", 100),
-        max_body_chars=_get_int_env("OBSIDIAN_MCP_MAX_BODY_CHARS", 20000),
-        max_attachment_bytes=_get_int_env("OBSIDIAN_MCP_MAX_ATTACHMENT_BYTES", 10 * 1024 * 1024),
-        max_scan_notes=_get_int_env("OBSIDIAN_MCP_MAX_SCAN_NOTES", 20000),
-        transport=os.getenv("OBSIDIAN_MCP_TRANSPORT", "stdio").strip(),  # type: ignore[arg-type]
-        host=os.getenv("OBSIDIAN_MCP_HOST", "localhost").strip(),
-        port=_get_int_env("OBSIDIAN_MCP_PORT", 8000),
+    return KnapConfig(
+        vault_provider=os.getenv("KNAP_VAULT_PROVIDER", "filesystem").strip() or "filesystem",
+        vault_path=os.getenv("KNAP_VAULT_PATH", "").strip(),
+        vault_name=os.getenv("KNAP_VAULT_NAME", "").strip(),
+        log_level=os.getenv("KNAP_MCP_LOG_LEVEL", "INFO").strip(),
+        default_limit=_get_int_env("KNAP_MCP_DEFAULT_LIMIT", 25),
+        max_limit=_get_int_env("KNAP_MCP_MAX_LIMIT", 100),
+        max_body_chars=_get_int_env("KNAP_MCP_MAX_BODY_CHARS", 20000),
+        max_attachment_bytes=_get_int_env("KNAP_MCP_MAX_ATTACHMENT_BYTES", 10 * 1024 * 1024),
+        max_scan_notes=_get_int_env("KNAP_MCP_MAX_SCAN_NOTES", 20000),
+        transport=os.getenv("KNAP_MCP_TRANSPORT", "stdio").strip(),  # type: ignore[arg-type]
+        host=os.getenv("KNAP_MCP_HOST", "localhost").strip(),
+        port=_get_int_env("KNAP_MCP_PORT", 8000),
     )
 
 
 # Singleton configuration instance.
-_config: Optional[ObsidianConfig] = None
+_config: Optional[KnapConfig] = None
 
 
-def get_config() -> ObsidianConfig:
+def get_config() -> KnapConfig:
     """Get the singleton configuration instance, loading it on first use."""
     global _config
     if _config is None:
@@ -170,7 +170,7 @@ def get_config() -> ObsidianConfig:
     return _config
 
 
-def set_config(config: ObsidianConfig) -> None:
+def set_config(config: KnapConfig) -> None:
     """Set the singleton configuration instance (primarily for testing)."""
     global _config
     _config = config

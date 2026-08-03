@@ -1,8 +1,11 @@
-# Obsidian Pro
+# Knap
 
-An MCP server over an Obsidian vault. Your notes are plain markdown on disk; this
-hands them to Claude, ChatGPT or any other MCP client, with the links, tags and
-frontmatter intact.
+**Knap, for Obsidian.** An MCP server over an Obsidian vault. Your notes are plain
+markdown on disk; this hands them to Claude, ChatGPT or any other MCP client, with
+the links, tags and frontmatter intact.
+
+Knapping is the craft of striking flakes off obsidian to shape a blade. *Knap* is
+also Dutch for clever. Both fit.
 
 > **Status: planning.** The design is settled and written down in
 > [docs/plan.md](docs/plan.md); the implementation starts at Phase 1. What exists
@@ -39,7 +42,7 @@ create, append and patch do not.
 This is the public package: one vault, from environment variables, over stdio or
 HTTP. The hosted multi-tenant service -- vaults on Hetzner, Zitadel login, git
 remotes, per-workspace isolation, usage diagnostics -- lives in the private
-`obsidian-pro-admin` repo and extends this one through documented seams only.
+`knap-mcp-admin` repo and extends this one through documented seams only.
 
 Same split as [odoo-mcp-pro](https://github.com/pantalytics/odoo-mcp-pro) and
 [squirrel-mcp](https://github.com/pantalytics/squirrel-mcp).

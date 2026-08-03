@@ -1,4 +1,4 @@
-# Obsidian Pro -- dev & test tasks.
+# Knap -- dev & test tasks.
 .DEFAULT_GOAL := help
 VENV := .venv
 PY := $(VENV)/bin/python
@@ -18,12 +18,12 @@ install: ## Create venv and install the package with dev extras
 
 .PHONY: lint
 lint: ## Run ruff + ty
-	$(RUFF) check obsidian_mcp tests
+	$(RUFF) check knap_mcp tests
 	$(TY) check
 
 .PHONY: format
 format: ## Apply ruff formatting
-	$(RUFF) format obsidian_mcp tests
+	$(RUFF) format knap_mcp tests
 
 .PHONY: test
 test: ## Unit tests (fake provider, no filesystem)

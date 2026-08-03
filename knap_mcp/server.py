@@ -1,4 +1,4 @@
-"""Obsidian Pro MCP server: FastMCP construction.
+"""Knap MCP server: FastMCP construction.
 
 ``create_fastmcp_app`` is the single source of truth for FastMCP construction and
 is the seam the private admin package reuses for its multi-tenant entry point.
@@ -6,7 +6,7 @@ Keep its signature aligned with ``squirrel_mcp.server.create_fastmcp_app``: the
 two admin packages are the same code with a different provider underneath, and a
 signature that drifts here is a rewrite there.
 
-The stdio/HTTP runners (``ObsidianMCPServer``) land here in Phase 1, alongside the
+The stdio/HTTP runners (``KnapMCPServer``) land here in Phase 1, alongside the
 filesystem provider and the tool mixins. See docs/plan.md.
 """
 
@@ -38,7 +38,7 @@ def create_fastmcp_app(
     if extra_instructions:
         instructions = f"{instructions}\n{extra_instructions}"
     return FastMCP(
-        name="obsidian-pro",
+        name="knap",
         instructions=instructions,
         auth=auth,
         token_verifier=token_verifier,

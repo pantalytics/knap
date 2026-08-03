@@ -2,14 +2,21 @@
 
 ## What this project is
 
-**obsidian-pro** -- an MCP server that hands an Obsidian vault to Claude and any
-other MCP client. The vault is plain markdown on disk; the tools read, search,
+**Knap** (`knap-mcp`) -- an MCP server that hands an Obsidian vault to Claude and
+any other MCP client. The vault is plain markdown on disk; the tools read, search,
 write and relink it.
+
+The name is the product's one joke and it earns its keep: knapping is the craft of
+striking flakes off obsidian to shape a blade, and *knap* is Dutch for clever. It
+deliberately does not lead with "Obsidian", because Obsidian's developer policy
+forbids a name that suggests a first-party product, and "Obsidian Pro" reads
+exactly like a paid tier of Obsidian itself. Say "Knap, for Obsidian" -- the
+vault app is what we work on, not what we are called.
 
 This is the **public** package. The hosted, multi-tenant SaaS (admin panel,
 Zitadel login, PostgreSQL, per-workspace vault storage, git remotes, Stripe,
 PostHog, Hetzner deploy) will live in the private repo
-`pantalytics/obsidian-pro-admin`, which imports this package as a tag-pinned
+`pantalytics/knap-mcp-admin`, which imports this package as a tag-pinned
 dependency. Same open-core split as `odoo-mcp-pro` / `odoo-mcp-pro-admin` and
 `squirrel-mcp` / `squirrel-mcp-admin`. This is the third product on those
 patterns and it reuses them deliberately -- read
@@ -91,7 +98,7 @@ The admin package subclasses/imports these -- rename only in coordination with i
 - `tools.handler.VaultToolHandler._track_usage` -- usage-tracking hook (no-op here).
 - `tools._common._current_sub` -- contextvar carrying the authenticated subject.
 - `usage.track_event` -- no-op stub here; the real tracker lives in admin.
-- `config.ObsidianConfig` and `server.SERVER_VERSION`.
+- `config.KnapConfig` and `server.SERVER_VERSION`.
 
 ## Conventions
 
@@ -127,7 +134,7 @@ make test-all
 |------|------|
 | `server.py` | `create_fastmcp_app()` factory, FastMCP setup, stdio/HTTP runners |
 | `__main__.py` | CLI entry: argparse, transport selection |
-| `config.py` | `ObsidianConfig` dataclass + env loading |
+| `config.py` | `KnapConfig` dataclass + env loading |
 | `providers/protocol.py` | `VaultProvider` protocol + value objects |
 | `providers/filesystem/` | The filesystem backend: paths, markdown, index, search |
 | `providers/factory.py` | Backend selection from config |
