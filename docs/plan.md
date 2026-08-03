@@ -447,11 +447,14 @@ Five things the tests found that the design had wrong, all fixed and pinned:
 * A move "relinked" notes whose links were already correct: identical bytes, a
   bumped mtime, and a result claiming we touched files we had not.
 
-Two things left undone on purpose, both flagged rather than hidden: the Dockerfile
-and its CI job are written but **unverified**, because this sandbox has no Docker
-daemon; and the `--check` run against the real `pantalytics-second-brain` is a
-local step, since pulling a private second brain into a build sandbox is not a
-thing to do casually.
+The container is verified too, by CI rather than locally: this sandbox has no
+Docker daemon, so the first real build of the image was the `docker` job, which
+also starts a container against a mounted vault and waits for it to answer its own
+healthcheck. Green on the first run.
+
+One step is deliberately local: `--check` against the real
+`pantalytics-second-brain`. Pulling a private second brain into a build sandbox is
+not a thing to do casually, so that is the one thing to run on your own machine.
 
 **Phase 2 -- the phone, without any sync.** `knap-mcp-admin`: Postgres,
 Zitadel login, the multi-tenant handler, the pages, the git transport for

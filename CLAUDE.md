@@ -25,7 +25,8 @@ it is already decided by those two.
 
 **Phase 1 is built and green**: the `VaultProvider` protocol, the filesystem
 backend, all nineteen `vault_*` tools, stdio and streamable-http transports, 309
-tests, and an MCP handshake smoke test that drives the server as a subprocess.
+tests, an MCP handshake smoke test that drives the server as a subprocess, and a
+container that CI builds and then proves serves a mounted vault.
 `docs/plan.md` holds the phase list and what is still ahead (the hosted layer,
 CouchDB sync, metering).
 
