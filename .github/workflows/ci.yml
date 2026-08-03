@@ -1,0 +1,92 @@
+# Runs on every branch and pull request: does the code hold up?
+#
+# Deliberately fast and self-contained. No services, no secrets, no network: a
+# vault is a directory, so the integration layer is a tmpdir and there is nothing
+# to stand up. That is the one way this repo is cheaper to test than its siblings,
+# which need GreenMail or a Postgres.
+name: CI
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_call: # so a deploy workflow can reuse this exact job
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor and the current release. 3.10 is in the matrix because
+        # requires-python says it is supported, and a 3.11-only syntax slip is
+        # otherwise invisible until somebody on 3.10 installs it.
+        python-version: ["3.10", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check knap_mcp tests scripts
+
+      - name: Formatting
+        run: ruff format --check knap_mcp tests scripts
+
+      - name: Line budget
+        run: python scripts/check_max_lines.py
+
+      - name: Tests
+        run: pytest -q
+
+      # The suite calls the tools in-process. This launches the server as a
+      # subprocess over stdio and drives it with a real MCP client, which is the
+      # only layer that catches a log line on stdout corrupting the protocol
+      # stream, or a result that will not serialize.
+      - name: MCP handshake over stdio
+        run: python scripts/mcp_smoke.py
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Catches a broken Dockerfile before anything tries to deploy one. No push:
+      # publishing belongs to the deploy workflow, which this repo does not have
+      # yet (the hosted layer is knap-mcp-admin).
+      - name: Build the image
+        run: docker build -t knap-mcp:ci .
+
+      # A container that starts, opens a mounted vault and answers its own
+      # healthcheck. The healthcheck is worth exercising rather than trusting:
+      # /mcp answers a bare GET with 406, and a probe that reads that as a
+      # failure marks every healthy release unhealthy.
+      - name: The container serves a mounted vault
+        run: |
+          mkdir -p /tmp/vault
+          printf '# Hello\n\nA note. #smoke\n' > /tmp/vault/note.md
+          docker run -d --name knap-ci \
+            -p 8000:8000 \
+            -v /tmp/vault:/vault:ro \
+            -e KNAP_VAULT_PATH=/vault \
+            knap-mcp:ci
+          for i in $(seq 1 40); do
+            if docker exec knap-ci python /app/scripts/healthcheck.py; then
+              echo "healthy after ${i} attempt(s)"
+              docker logs knap-ci
+              docker rm -f knap-ci
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "container never became healthy"
+          docker logs knap-ci
+          exit 1
