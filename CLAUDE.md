@@ -23,7 +23,11 @@ this file describes the shape the code is being built into.
 
 1. **The vault is the boss.** Notes are files. We do not own a database of
    content, we do not cache a copy, and Obsidian remains free to edit every byte
-   under us. The server is a stateless view over a directory.
+   under us. The server is a stateless view over a directory. Plain markdown on
+   disk stays the source of truth even in the hosted deployment, where CouchDB
+   and git are transports projecting onto it and not stores in their own right --
+   that invariant is what keeps search cheap and the phone possible, and
+   docs/plan.md explains why.
 2. **Swappable backends.** Tools only ever touch the `VaultProvider` protocol,
    never a concrete filesystem call. The filesystem backend satisfies it today;
    a git-object or object-storage backend can satisfy it later without the tools
