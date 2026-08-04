@@ -19,16 +19,16 @@ PostHog, Hetzner deploy) will live in the private repo
 `pantalytics/knap-mcp-admin`, which imports this package as a tag-pinned
 dependency. Same open-core split as `odoo-mcp-pro` / `odoo-mcp-pro-admin` and
 `squirrel-mcp` / `squirrel-mcp-admin`. This is the third product on those
-patterns and it reuses them deliberately -- read
-[docs/plan.md](docs/plan.md) before designing anything new here, because most of
-it is already decided by those two.
+patterns and it reuses them deliberately -- read `docs/plan.md` in the admin
+repo before designing anything new here, because most of it is already decided
+by those two.
 
 **Phase 1 is built and green**: the `VaultProvider` protocol, the filesystem
 backend, all nineteen `vault_*` tools, stdio and streamable-http transports, 309
 tests, an MCP handshake smoke test that drives the server as a subprocess, and a
 container that CI builds and then proves serves a mounted vault.
-`docs/plan.md` holds the phase list and what is still ahead (the hosted layer,
-CouchDB sync, metering).
+The phase list and what is still ahead (the hosted layer, CouchDB sync,
+metering) live with the hosted layer, in `knap-mcp-admin/docs/plan.md`.
 
 ## Design principles
 
@@ -37,8 +37,7 @@ CouchDB sync, metering).
    under us. The server is a stateless view over a directory. Plain markdown on
    disk stays the source of truth even in the hosted deployment, where CouchDB
    and git are transports projecting onto it and not stores in their own right --
-   that invariant is what keeps search cheap and the phone possible, and
-   docs/plan.md explains why.
+   that invariant is what keeps search cheap and the phone possible.
 2. **Swappable backends.** Tools only ever touch the `VaultProvider` protocol,
    never a concrete filesystem call. The filesystem backend satisfies it today;
    a git-object or object-storage backend can satisfy it later without the tools

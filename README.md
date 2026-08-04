@@ -8,8 +8,8 @@ Knapping is the craft of striking flakes off obsidian to shape a blade. *Knap* i
 also Dutch for clever. Both fit.
 
 > **Status: works standalone.** Nineteen tools over stdio or HTTP against a vault
-> on disk, with 309 tests. The hosted, multi-tenant, phone-first half is Phase 2
-> and lives in [docs/plan.md](docs/plan.md).
+> on disk, with 309 tests. The hosted, multi-tenant, phone-first half is being
+> built on top of this package and is not part of it.
 
 ## What it does
 
@@ -77,7 +77,6 @@ make smoke    # a real MCP client driving the server as a subprocess
 make test-all
 ```
 
-Read [CLAUDE.md](CLAUDE.md) for the architecture and conventions, and
-[docs/plan.md](docs/plan.md) for the phase plan and the open decisions.
+Read [CLAUDE.md](CLAUDE.md) for the architecture and conventions.
 
 By [Pantalytics](https://pantalytics.com).
