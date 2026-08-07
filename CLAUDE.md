@@ -13,31 +13,45 @@ forbids a name that suggests a first-party product, and "Obsidian Pro" reads
 exactly like a paid tier of Obsidian itself. Say "Knap, for Obsidian" -- the
 vault app is what we work on, not what we are called.
 
-This is the **public** package. The hosted, multi-tenant SaaS (admin panel,
-Zitadel login, PostgreSQL, per-workspace vault storage, git remotes, Stripe,
-PostHog, Hetzner deploy) will live in the private repo
-`pantalytics/knap-mcp-admin`, which imports this package as a tag-pinned
-dependency. Same open-core split as `odoo-mcp-pro` / `odoo-mcp-pro-admin` and
-`squirrel-mcp` / `squirrel-mcp-admin`. This is the third product on those
-patterns and it reuses them deliberately -- read `docs/plan.md` in the admin
-repo before designing anything new here, because most of it is already decided
-by those two.
+**This file describes this package and nothing else.** `knap-mcp` is the public
+half of an open-core split, the same one as `odoo-mcp-pro` /
+`odoo-mcp-pro-admin` and `squirrel-mcp` / `squirrel-mcp-admin`. A private
+package imports this one as a tag-pinned dependency and adds the hosted,
+multi-tenant service on top of it, through the seams listed below and no others.
 
-**Phase 1 is built and green**: the `VaultProvider` protocol, the filesystem
-backend, all nineteen `vault_*` tools, stdio and streamable-http transports, 309
-tests, an MCP handshake smoke test that drives the server as a subprocess, and a
-container that CI builds and then proves serves a mounted vault.
-The phase list and what is still ahead (the hosted layer, CouchDB sync,
-metering) live with the hosted layer, in `knap-mcp-admin/docs/plan.md`.
+Two consequences, and they are the whole reason this section exists:
+
+- **Do not design this package around the hosted layer.** Its architecture is
+  not described here, it changes on its own schedule, and a decision taken there
+  is not a decision here. If a change needs something from it, that is a change
+  to the seam contract below, and it gets agreed on both sides before it is
+  built.
+- **Do not put anything private in this repo.** No customer names, no
+  infrastructure hostnames, no roadmap for the hosted service. This package is
+  meant to be public at v0.1.0 and everything in it should already read as if it
+  were.
+
+**It is built and green**: the `VaultProvider` protocol, the filesystem backend,
+all nineteen `vault_*` tools, stdio and streamable-http transports, 309 tests,
+an MCP handshake smoke test that drives the server as a subprocess, and a
+container that CI builds and then proves serves a mounted vault. What is left
+here is maintenance and the occasional tool. The build ahead is in the private
+package.
 
 ## Design principles
 
-1. **The vault is the boss.** Notes are files. We do not own a database of
-   content, we do not cache a copy, and Obsidian remains free to edit every byte
-   under us. The server is a stateless view over a directory. Plain markdown on
-   disk stays the source of truth even in the hosted deployment, where CouchDB
-   and git are transports projecting onto it and not stores in their own right --
-   that invariant is what keeps search cheap and the phone possible.
+1. **The vault is the boss.** Notes are files. Obsidian remains free to edit
+   every byte under us, so this package owns no database of content and keeps no
+   copy of its own: the server is a stateless view over a directory, and
+   whatever is on disk when a call arrives is the answer.
+
+   Read that as a rule about **this package**, not a ban on caching anywhere.
+   A `VaultProvider` is free to be backed by something that maintains a local
+   copy of a remote store, and one that does is still honouring this principle
+   so long as plain markdown on disk is what the tools read and the remote is
+   what the world agrees on. What the rule forbids is *us* becoming the system
+   of record: a store of note content that Obsidian does not get a vote in.
+   That invariant is what keeps search cheap and the phone possible.
 2. **Swappable backends.** Tools only ever touch the `VaultProvider` protocol,
    never a concrete filesystem call. The filesystem backend satisfies it today;
    a git-object or object-storage backend can satisfy it later without the tools
@@ -90,6 +104,26 @@ metering) live with the hosted layer, in `knap-mcp-admin/docs/plan.md`.
   needs its plugin. `vault_search` offers frontmatter properties instead, which
   covers most of what people ask Dataview for, and `knowledge.py` says so at the
   handshake rather than letting a client invent a query it cannot run.
+- **Frontmatter property search is the retrieval mechanism, not a consolation
+  prize.** The Dataview bullet above says why property search exists instead of
+  a query language. This says why it is worth more than "instead" makes it
+  sound: a vault that keeps a structured frontmatter discipline is one an AI can
+  ask precise questions of. Retrieve the notes whose `type` is `meeting`, rather
+  than grepping for the word "meeting" and hoping.
+  [OKF, the Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing),
+  is that discipline written down: an open Google Cloud spec, v0.1 dated
+  2026-06-12, whose one hard rule is that every note carries parseable
+  frontmatter with a non-empty `type`, plus optional `title`, `description`,
+  `resource`, `tags` and `timestamp`. Those six keys are the ones worth being
+  good at. (Read off the spec announcement on 2026-08-07, not from the
+  normative document; if a detail matters, check the spec.)
+
+  So treat `property` and `property_value` on `vault_search`, and the property
+  fields on `vault_read`, as load-bearing surface rather than a corner of the
+  API. Free-text search is the fallback, not the plan. We do not implement OKF
+  and we do not validate it: a vault either keeps the discipline or it does not,
+  and the tools work either way. What we owe it is that querying those keys is
+  fast, paginated and honest about what it did not match.
 - Blocking filesystem calls run off the event loop via
   `tools/_common.run_blocking` (per-provider `asyncio.Lock`).
 - Single-tenant: one vault from env vars (stdio or HTTP). The hosted

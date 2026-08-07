@@ -39,9 +39,9 @@ create, append and patch do not.
 ## Open core
 
 This is the public package: one vault, from environment variables, over stdio or
-HTTP. The hosted multi-tenant service -- vaults on Hetzner, Zitadel login, git
-remotes, per-workspace isolation, usage diagnostics -- lives in the private
-`knap-mcp-admin` repo and extends this one through documented seams only.
+HTTP. A private package adds the hosted, multi-tenant service on top of it, and
+extends this one through documented seams only. It never forks this code, and
+nothing here depends on it.
 
 Same split as [odoo-mcp-pro](https://github.com/pantalytics/odoo-mcp-pro) and
 [squirrel-mcp](https://github.com/pantalytics/squirrel-mcp).
