@@ -13,31 +13,39 @@ forbids a name that suggests a first-party product, and "Obsidian Pro" reads
 exactly like a paid tier of Obsidian itself. Say "Knap, for Obsidian" -- the
 vault app is what we work on, not what we are called.
 
-This is the **public** package. The hosted, multi-tenant SaaS (admin panel,
-Zitadel login, PostgreSQL, per-workspace vault storage, git remotes, Stripe,
-PostHog, Hetzner deploy) will live in the private repo
-`pantalytics/knap-mcp-admin`, which imports this package as a tag-pinned
-dependency. Same open-core split as `odoo-mcp-pro` / `odoo-mcp-pro-admin` and
-`squirrel-mcp` / `squirrel-mcp-admin`. This is the third product on those
-patterns and it reuses them deliberately -- read `docs/plan.md` in the admin
-repo before designing anything new here, because most of it is already decided
-by those two.
+**This file describes this package and nothing else.** `knap-mcp` is the public
+half of an open-core split, the same one as `odoo-mcp-pro` /
+`odoo-mcp-pro-admin` and `squirrel-mcp` / `squirrel-mcp-admin`. A private
+package imports this one as a tag-pinned dependency and adds the hosted,
+multi-tenant service on top of it, through the seams listed below and no others.
 
-**Phase 1 is built and green**: the `VaultProvider` protocol, the filesystem
-backend, all nineteen `vault_*` tools, stdio and streamable-http transports, 309
-tests, an MCP handshake smoke test that drives the server as a subprocess, and a
-container that CI builds and then proves serves a mounted vault.
-The phase list and what is still ahead (the hosted layer, CouchDB sync,
-metering) live with the hosted layer, in `knap-mcp-admin/docs/plan.md`.
+Two consequences, and they are the whole reason this section exists:
+
+- **Do not design this package around the hosted layer.** Its architecture is
+  not described here, it changes on its own schedule, and a decision taken there
+  is not a decision here. If a change needs something from it, that is a change
+  to the seam contract below, and it gets agreed on both sides before it is
+  built.
+- **Do not put anything private in this repo.** No customer names, no
+  infrastructure hostnames, no roadmap for the hosted service. This package is
+  meant to be public at v0.1.0 and everything in it should already read as if it
+  were.
+
+**It is built and green**: the `VaultProvider` protocol, the filesystem backend,
+all nineteen `vault_*` tools, stdio and streamable-http transports, 309 tests,
+an MCP handshake smoke test that drives the server as a subprocess, and a
+container that CI builds and then proves serves a mounted vault. What is left
+here is maintenance and the occasional tool. The build ahead is in the private
+package.
 
 ## Design principles
 
 1. **The vault is the boss.** Notes are files. We do not own a database of
    content, we do not cache a copy, and Obsidian remains free to edit every byte
    under us. The server is a stateless view over a directory. Plain markdown on
-   disk stays the source of truth even in the hosted deployment, where CouchDB
-   and git are transports projecting onto it and not stores in their own right --
-   that invariant is what keeps search cheap and the phone possible.
+   disk stays the source of truth wherever this runs: anything that syncs a
+   vault is a transport projecting onto those files, never a store in its own
+   right. That invariant is what keeps search cheap and the phone possible.
 2. **Swappable backends.** Tools only ever touch the `VaultProvider` protocol,
    never a concrete filesystem call. The filesystem backend satisfies it today;
    a git-object or object-storage backend can satisfy it later without the tools
