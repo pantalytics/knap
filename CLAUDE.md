@@ -98,6 +98,26 @@ package.
   needs its plugin. `vault_search` offers frontmatter properties instead, which
   covers most of what people ask Dataview for, and `knowledge.py` says so at the
   handshake rather than letting a client invent a query it cannot run.
+- **Frontmatter property search is the retrieval mechanism, not a consolation
+  prize.** The Dataview bullet above says why property search exists instead of
+  a query language. This says why it is worth more than "instead" makes it
+  sound: a vault that keeps a structured frontmatter discipline is one an AI can
+  ask precise questions of. Retrieve the notes whose `type` is `meeting`, rather
+  than grepping for the word "meeting" and hoping.
+  [OKF, the Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing),
+  is that discipline written down: an open Google Cloud spec, v0.1 dated
+  2026-06-12, whose one hard rule is that every note carries parseable
+  frontmatter with a non-empty `type`, plus optional `title`, `description`,
+  `resource`, `tags` and `timestamp`. Those six keys are the ones worth being
+  good at. (Read off the spec announcement on 2026-08-07, not from the
+  normative document; if a detail matters, check the spec.)
+
+  So treat `property` and `property_value` on `vault_search`, and the property
+  fields on `vault_read`, as load-bearing surface rather than a corner of the
+  API. Free-text search is the fallback, not the plan. We do not implement OKF
+  and we do not validate it: a vault either keeps the discipline or it does not,
+  and the tools work either way. What we owe it is that querying those keys is
+  fast, paginated and honest about what it did not match.
 - Blocking filesystem calls run off the event loop via
   `tools/_common.run_blocking` (per-provider `asyncio.Lock`).
 - Single-tenant: one vault from env vars (stdio or HTTP). The hosted
