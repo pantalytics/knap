@@ -40,12 +40,18 @@ package.
 
 ## Design principles
 
-1. **The vault is the boss.** Notes are files. We do not own a database of
-   content, we do not cache a copy, and Obsidian remains free to edit every byte
-   under us. The server is a stateless view over a directory. Plain markdown on
-   disk stays the source of truth wherever this runs: anything that syncs a
-   vault is a transport projecting onto those files, never a store in its own
-   right. That invariant is what keeps search cheap and the phone possible.
+1. **The vault is the boss.** Notes are files. Obsidian remains free to edit
+   every byte under us, so this package owns no database of content and keeps no
+   copy of its own: the server is a stateless view over a directory, and
+   whatever is on disk when a call arrives is the answer.
+
+   Read that as a rule about **this package**, not a ban on caching anywhere.
+   A `VaultProvider` is free to be backed by something that maintains a local
+   copy of a remote store, and one that does is still honouring this principle
+   so long as plain markdown on disk is what the tools read and the remote is
+   what the world agrees on. What the rule forbids is *us* becoming the system
+   of record: a store of note content that Obsidian does not get a vote in.
+   That invariant is what keeps search cheap and the phone possible.
 2. **Swappable backends.** Tools only ever touch the `VaultProvider` protocol,
    never a concrete filesystem call. The filesystem backend satisfies it today;
    a git-object or object-storage backend can satisfy it later without the tools
