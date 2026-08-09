@@ -82,6 +82,11 @@ Daily notes and attachments:
   it. Pass `create=true` to make it from the vault's template when it does not
   exist yet.
 - vault_get_attachment / vault_put_attachment: non-markdown files by path.
+  Images, recordings and PDFs are part of the vault, not an afterthought: a note
+  that says `![[scan.pdf]]` is a note whose content is partly in that file. Read
+  a note first and the embed comes back in `links` with `embed: true` and a
+  `resolved_path`, which is the path to pass. Large files come back as a refusal
+  naming the size rather than an enormous response.
 
 Good habits:
 - Resolve folder and note paths with the list and search tools before writing

@@ -196,6 +196,38 @@ def walk_notes(
     this is the cheap half of indexing, and it is why a refresh over ten
     thousand notes costs milliseconds rather than a read of the whole vault.
     """
+    return _walk(root, subfolder=subfolder, include_hidden=include_hidden, notes=True)
+
+
+def walk_attachments(
+    root: Path,
+    *,
+    subfolder: str = "",
+    include_hidden: bool = False,
+) -> Iterable[Path]:
+    """Yield every file under ``root`` that is *not* a note.
+
+    Images, recordings, PDFs: the half of a vault the tools do not parse but
+    still have to be able to name. A link is only resolvable to something the
+    index has heard of, so an embed of a file nothing ever walked reads as
+    broken even with the file sitting right there on disk.
+    """
+    return _walk(root, subfolder=subfolder, include_hidden=include_hidden, notes=False)
+
+
+def _walk(
+    root: Path,
+    *,
+    subfolder: str,
+    include_hidden: bool,
+    notes: bool,
+) -> Iterable[Path]:
+    """One tree walk, filtered by whether a name ends in ``.md``.
+
+    Shared rather than duplicated because the traversal is the expensive part
+    and the filter is one comparison: an index that wants both halves should
+    pay for one walk, not two.
+    """
     start = resolve_in_vault(root, subfolder) if subfolder else root.resolve()
     if not start.is_dir():
         return
@@ -219,5 +251,5 @@ def walk_notes(
                 continue
             if entry.is_dir():
                 stack.append(entry)
-            elif is_note(name):
+            elif is_note(name) == notes:
                 yield entry
