@@ -131,18 +131,39 @@ package.
 
 ## Open-core extension contract
 
-The admin package subclasses/imports these -- rename only in coordination with it:
+The private package extends this one through the names below. **Rename any of
+them only in coordination with it**, because nothing in this repo's tests or CI
+will notice if you break one.
+
+Overridden -- the hooks that exist to be replaced:
 
 - `server.create_fastmcp_app(*, auth=None, token_verifier=None, extra_instructions=None)`
   -- single source of truth for FastMCP construction.
-- `tools.handler.VaultToolHandler._get_provider` -- the hook admin overrides to
-  resolve a per-workspace vault from the authenticated subject.
-- `tools.handler.VaultToolHandler._list_vaults` -- the hook admin overrides to
-  list a workspace's vaults.
+- `tools.handler.VaultToolHandler._get_provider` -- resolve a per-tenant vault
+  from the authenticated subject.
+- `tools.handler.VaultToolHandler._list_vaults` -- list a tenant's vaults.
 - `tools.handler.VaultToolHandler._track_usage` -- usage-tracking hook (no-op here).
 - `tools._common._current_sub` -- contextvar carrying the authenticated subject.
-- `usage.track_event` -- no-op stub here; the real tracker lives in admin.
-- `config.KnapConfig` and `server.SERVER_VERSION`.
+
+Imported -- ordinary use of this package's API, listed because it is easy to
+mistake some of it for internal:
+
+- `config.KnapConfig`.
+- `error_handling`: `KnapError`, `ValidationError`, `sanitize`.
+- `providers`: `VaultProvider` and the exception hierarchy.
+- `providers.protocol`: the value dataclasses.
+- `providers.filesystem.provider.FilesystemVaultProvider`, composed rather than
+  subclassed.
+- **`providers.filesystem.markdown` and `providers.filesystem.paths`.** These
+  read as internal -- `providers/filesystem/` is described above as the only
+  place that knows about the filesystem, and `paths.py` is a security boundary
+  with its own regression file -- and a downstream backend is built on them
+  anyway. Treat their signatures as public.
+
+Reserved, and not used by anything today: `usage.track_event` is a stub that
+nothing in either package calls, and `server.SERVER_VERSION` is used here but
+imported by nobody. Keep or drop them on their own merits; "the private package
+depends on it" is not currently a reason.
 
 ## Conventions
 
