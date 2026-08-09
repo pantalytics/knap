@@ -100,7 +100,7 @@ class WriteOperationsMixin:
                 raise NoteNotFoundError(f"{rel} does not exist")
             self._check_rev(rel, absolute, expected_rev, required=True)
 
-        if exists and mode in ("append", "prepend"):
+        if exists and mode in ("append", "prepend", "overwrite"):
             current, _, _, _ = md.read_text(absolute)
             parsed = md.parse(current)
             if mode == "append":
@@ -109,8 +109,19 @@ class WriteOperationsMixin:
                 # glues itself onto the last sentence is a corrupted paragraph.
                 separator = "" if parsed.body.endswith("\n\n") or not parsed.body else "\n"
                 new_body = f"{parsed.body.rstrip(chr(10))}\n{separator}{body}"
-            else:
+            elif mode == "prepend":
                 new_body = f"{body}\n\n{parsed.body.lstrip(chr(10))}"
+            else:
+                # Overwrite replaces the body and keeps the frontmatter, which is
+                # what `vault_update_note` tells the caller in three places: `body`
+                # is "the new body, replacing everything after the frontmatter",
+                # `properties` says omitting it "leaves the existing frontmatter
+                # alone", and the confirm prompt promises only what is "below the
+                # frontmatter". It used to drop the block instead, so a model doing
+                # an ordinary read-modify-write silently deleted `type`, `tags` and
+                # `aliases` -- the frontmatter discipline the whole retrieval story
+                # rests on, gone without appearing in the diff it asked about.
+                new_body = body
             text = self._compose(parsed.frontmatter_raw, new_body)
         else:
             text = self._compose("", body)

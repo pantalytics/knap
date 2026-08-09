@@ -152,7 +152,17 @@ def _render(key: str, value: Any) -> Optional[List[str]]:
 
 
 def _scalar(value: str) -> str:
-    """Quote a string only when YAML would otherwise read it as something else."""
+    """Quote a string only when YAML would otherwise read it as something else.
+
+    The list below is the cheap answer and ``_reads_back`` is the correct one.
+    Keeping both is deliberate: the list documents the cases worth knowing about
+    and settles the overwhelming majority without a parse, and the round trip
+    catches whatever the list forgot. It forgot ``#`` for a long time -- a hash
+    after a space opens a comment, so ``Budget #2026 review`` was written
+    unquoted and read back as ``Budget``, with the rest gone from the file. That
+    is the failure this function exists to prevent, and enumerating YAML's
+    surprises from memory is how it got missed.
+    """
     if value == "":
         return '""'
     needs_quotes = (
@@ -161,13 +171,28 @@ def _scalar(value: str) -> str:
         or ": " in value
         or value.endswith(":")
         or "\n" in value
+        or " #" in value
+        or "\t#" in value
         or value.lower() in ("true", "false", "null", "yes", "no", "on", "off", "~")
         or _looks_numeric(value)
     )
-    if not needs_quotes:
+    if not needs_quotes and _reads_back(value):
         return value
     escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
     return f'"{escaped}"'
+
+
+def _reads_back(value: str) -> bool:
+    """Does this string, written bare, parse back as itself?
+
+    The one question that matters, asked of the parser instead of answered from
+    memory. A note is the customer's own writing, so the interesting inputs are
+    the ones nobody thought of.
+    """
+    try:
+        return yaml.safe_load(f"x: {value}") == {"x": value}
+    except yaml.YAMLError:
+        return False
 
 
 def _looks_numeric(value: str) -> bool:

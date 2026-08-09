@@ -208,7 +208,28 @@ class TestEditFrontmatter:
 
     @pytest.mark.parametrize(
         "value",
-        ["true", "false", "null", "yes", "no", "1.5", "42", "2026-01-01", "a: b", "", "  x"],
+        [
+            "true",
+            "false",
+            "null",
+            "yes",
+            "no",
+            "1.5",
+            "42",
+            "2026-01-01",
+            "a: b",
+            "",
+            "  x",
+            # A hash after a space opens a YAML comment, so an unquoted
+            # `Budget #2026 review` used to reach disk and read back as
+            # `Budget`, with the rest of the title silently gone. The leading
+            # `#` was handled; this one is the middle of an ordinary sentence,
+            # and `#` in a title or a tag is not exotic in an Obsidian vault.
+            "Budget #2026 review",
+            "release #3 notes",
+            "tab\t#comment",
+            "trailing hash #",
+        ],
     )
     def test_a_string_that_yaml_would_misread_is_quoted(self, value: str) -> None:
         """The round trip is what matters: what we write must read back equal.
@@ -238,10 +259,36 @@ class TestEditFrontmatter:
 
     def test_what_we_write_is_what_pyyaml_reads(self) -> None:
         """Belt and braces on the hand-rolled scalar writer."""
-        values = {"a": "true", "b": "x: y", "c": "-dash", "d": "#hash", "e": "100%"}
+        values = {
+            "a": "true",
+            "b": "x: y",
+            "c": "-dash",
+            "d": "#hash",
+            "e": "100%",
+            "f": "Budget #2026 review",
+        }
         new = md.edit_frontmatter("Body\n", values)
         inner = new.split("---\n")[1]
         assert yaml.safe_load(inner) == values
+
+    def test_a_list_item_with_a_hash_keeps_everything_after_it(self) -> None:
+        """The list path stringifies each item and quotes it the same way."""
+        tags = ["proj #1", "ok", "#lead", "a: b"]
+        new = md.edit_frontmatter("Body\n", {"tags": tags})
+        assert md.parse(new).frontmatter["tags"] == tags
+
+    @pytest.mark.parametrize(
+        "value",
+        ["plain", "two words", "path/to/note", "CamelCase", "with-dash", "e-mail@host"],
+    )
+    def test_an_ordinary_string_is_still_written_bare(self, value: str) -> None:
+        """The quoting must stay narrow, or every note gains quotes it did not have.
+
+        `vault_set_properties` promises a minimal diff, and a value that suddenly
+        acquires quotes is noise in every diff the customer reads after it.
+        """
+        new = md.edit_frontmatter("Body\n", {"status": value})
+        assert f"status: {value}\n" in new
 
 
 class TestSections:
