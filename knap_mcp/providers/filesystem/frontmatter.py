@@ -141,27 +141,37 @@ def _render(key: str, value: Any) -> Optional[List[str]]:
     if isinstance(value, (int, float)):
         return [f"{key}: {value}"]
     if isinstance(value, str):
-        return [f"{key}: {_scalar(value)}"]
+        rendered = _scalar(value)
+        return None if rendered is None else [f"{key}: {rendered}"]
     if isinstance(value, list):
         if not value:
             return [f"{key}: []"]
         if not all(isinstance(item, (str, int, float, bool)) for item in value):
             return None
-        return [f"{key}:", *[f"  - {_scalar(str(item))}" for item in value]]
+        items = [_scalar(str(item)) for item in value]
+        if any(item is None for item in items):
+            return None
+        return [f"{key}:", *[f"  - {item}" for item in items]]
     return None
 
 
-def _scalar(value: str) -> str:
-    """Quote a string only when YAML would otherwise read it as something else.
+def _scalar(value: str) -> Optional[str]:
+    """Write a string as a YAML scalar, or None if we cannot do it safely.
 
-    The list below is the cheap answer and ``_reads_back`` is the correct one.
-    Keeping both is deliberate: the list documents the cases worth knowing about
-    and settles the overwhelming majority without a parse, and the round trip
-    catches whatever the list forgot. It forgot ``#`` for a long time -- a hash
-    after a space opens a comment, so ``Budget #2026 review`` was written
-    unquoted and read back as ``Budget``, with the rest gone from the file. That
-    is the failure this function exists to prevent, and enumerating YAML's
-    surprises from memory is how it got missed.
+    The list below is the cheap answer and ``_reads_back`` is the deciding one.
+    Keeping both is deliberate: the list settles the overwhelming majority
+    without a parse and documents the cases worth knowing about, and the round
+    trip catches whatever the list forgot. It forgot ``#`` for a long time -- a
+    hash after a space opens a comment, so ``Budget #2026 review`` was written
+    unquoted and read back as ``Budget``, with the rest gone from the file.
+
+    Quoting is not automatically the safe answer either, which is why the quoted
+    form is checked too. Escaping covers backslash, quote and newline, so a
+    carriage return survives into the double-quoted scalar and YAML folds it to
+    a space on the way back. When neither form round-trips we return None and
+    the caller re-dumps the block with PyYAML: a formatting diff the customer
+    can see, which is the trade this module already makes for nested values and
+    is strictly better than writing something that reads back wrong.
     """
     if value == "":
         return '""'
@@ -176,22 +186,29 @@ def _scalar(value: str) -> str:
         or value.lower() in ("true", "false", "null", "yes", "no", "on", "off", "~")
         or _looks_numeric(value)
     )
-    if not needs_quotes and _reads_back(value):
+    if not needs_quotes and _reads_back(value, value):
         return value
     escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-    return f'"{escaped}"'
+    quoted = f'"{escaped}"'
+    return quoted if _reads_back(quoted, value) else None
 
 
-def _reads_back(value: str) -> bool:
-    """Does this string, written bare, parse back as itself?
+def _reads_back(written: str, value: str) -> bool:
+    """Does ``written``, as the value of a key, parse back as ``value``?
 
     The one question that matters, asked of the parser instead of answered from
     memory. A note is the customer's own writing, so the interesting inputs are
-    the ones nobody thought of.
+    the ones nobody thought of, and the parser is the only thing that knows them
+    all.
+
+    Every exception counts as "no". PyYAML raises more than ``YAMLError`` here:
+    its timestamp constructor calls ``datetime.date``, so a mistyped date like
+    ``2026-02-30`` comes out as a ``ValueError`` and would otherwise travel all
+    the way up through ``vault_set_properties`` into the caller's face.
     """
     try:
-        return yaml.safe_load(f"x: {value}") == {"x": value}
-    except yaml.YAMLError:
+        return yaml.safe_load(f"x: {written}") == {"x": value}
+    except Exception:  # noqa: BLE001 - any failure to parse means "do not write this"
         return False
 
 

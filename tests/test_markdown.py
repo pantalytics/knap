@@ -236,9 +236,17 @@ class TestEditFrontmatter:
 
         Writing `status: true` for the string "true" hands the vault a boolean,
         and the property silently changes type.
+
+        Start from a note that already HAS frontmatter, or this tests the wrong
+        code. `edit` sends a note without a block straight to `_dump_block`, so
+        PyYAML does the quoting and our own `_scalar` never runs. The `#` bug
+        lived on the in-place path and an earlier version of these cases passed
+        against the broken code for exactly that reason.
         """
-        new = md.edit_frontmatter("Body\n", {"status": value})
+        raw = "---\nkeep: me\n---\nBody\n"
+        new = md.edit_frontmatter(raw, {"status": value})
         assert md.parse(new).frontmatter["status"] == value
+        assert md.parse(new).frontmatter["keep"] == "me"
 
     def test_a_list_of_scalars_round_trips(self) -> None:
         new = md.edit_frontmatter("Body\n", {"tags": ["one", "two/three"]})
@@ -258,7 +266,11 @@ class TestEditFrontmatter:
         assert md.parse(new).frontmatter["title"] == 'He said "no"'
 
     def test_what_we_write_is_what_pyyaml_reads(self) -> None:
-        """Belt and braces on the hand-rolled scalar writer."""
+        """Belt and braces on the hand-rolled scalar writer.
+
+        Note the `raw` with a block in it: without one this goes to `_dump_block`
+        and tests PyYAML rather than us. See the parametrized case above.
+        """
         values = {
             "a": "true",
             "b": "x: y",
@@ -267,14 +279,14 @@ class TestEditFrontmatter:
             "e": "100%",
             "f": "Budget #2026 review",
         }
-        new = md.edit_frontmatter("Body\n", values)
+        new = md.edit_frontmatter("---\nkeep: me\n---\nBody\n", values)
         inner = new.split("---\n")[1]
-        assert yaml.safe_load(inner) == values
+        assert yaml.safe_load(inner) == {"keep": "me", **values}
 
     def test_a_list_item_with_a_hash_keeps_everything_after_it(self) -> None:
         """The list path stringifies each item and quotes it the same way."""
         tags = ["proj #1", "ok", "#lead", "a: b"]
-        new = md.edit_frontmatter("Body\n", {"tags": tags})
+        new = md.edit_frontmatter("---\nkeep: me\n---\nBody\n", {"tags": tags})
         assert md.parse(new).frontmatter["tags"] == tags
 
     @pytest.mark.parametrize(
@@ -287,8 +299,35 @@ class TestEditFrontmatter:
         `vault_set_properties` promises a minimal diff, and a value that suddenly
         acquires quotes is noise in every diff the customer reads after it.
         """
-        new = md.edit_frontmatter("Body\n", {"status": value})
+        new = md.edit_frontmatter("---\nkeep: me\n---\nBody\n", {"status": value})
         assert f"status: {value}\n" in new
+
+    @pytest.mark.parametrize("value", ["2026-02-30", "2026-13-01", "2026-01-01 25:00:00"])
+    def test_a_mistyped_date_does_not_reach_the_caller_as_a_crash(self, value: str) -> None:
+        """PyYAML raises ValueError, not YAMLError, when it builds a date.
+
+        `2026-02-30` is a plausible typo, and asking the parser whether a value
+        round-trips means catching everything the parser can throw. Treating only
+        YAMLError as "no" turned a bad property into an exception out of
+        `vault_set_properties`.
+        """
+        new = md.edit_frontmatter("---\nkeep: me\n---\nBody\n", {"due": value})
+        assert md.parse(new).frontmatter["due"] == value
+
+    @pytest.mark.parametrize("value", ["line1\rline2", "vertical\x0btab", "form\x0cfeed"])
+    def test_a_control_character_falls_back_rather_than_folding_to_a_space(
+        self, value: str
+    ) -> None:
+        """Quoting is not automatically safe, so the quoted form is checked too.
+
+        Escaping covers backslash, quote and newline. A carriage return survives
+        into the double-quoted scalar and YAML folds it back to a space, so the
+        value read back short a character and nobody was told.
+        """
+        new = md.edit_frontmatter("---\nkeep: me\n---\nBody\n", {"note": value})
+        parsed = md.parse(new)
+        assert parsed.frontmatter["note"] == value
+        assert parsed.frontmatter["keep"] == "me"
 
 
 class TestSections:
