@@ -105,6 +105,61 @@ class TestLinkResolution:
         assert provider.resolve_link("") is None
 
 
+class TestAttachmentResolution:
+    """An embed of a non-note file has to resolve, or the AI cannot fetch it.
+
+    `vault_get_attachment` tells the caller to pass the embed's `resolved_path`,
+    so a null there is not a cosmetic gap: it is the tool documenting a route
+    that does not exist.
+    """
+
+    def test_an_embed_of_an_attachment_resolves_by_path(self, provider) -> None:
+        assert provider.resolve_link("Attachments/diagram.png") == "Attachments/diagram.png"
+
+    def test_an_embed_resolves_by_bare_filename(self, provider) -> None:
+        assert provider.resolve_link("diagram.png") == "Attachments/diagram.png"
+
+    def test_a_read_note_hands_back_the_path_to_fetch(self, provider) -> None:
+        note = provider.read("index.md")
+        embed = next(link for link in note.links if link.embed)
+        assert embed.resolved_path == "Attachments/diagram.png"
+        assert provider.read_binary(embed.resolved_path).size > 0
+
+    def test_a_sibling_attachment_wins_over_one_nearer_the_root(
+        self, vault_root: Path, provider
+    ) -> None:
+        (vault_root / "shot.png").write_bytes(b"root")
+        (vault_root / "Projects" / "shot.png").write_bytes(b"sibling")
+        provider.index.refresh(force=True)
+        assert (
+            provider.resolve_link("shot.png", from_path="Projects/Meeting notes.md")
+            == "Projects/shot.png"
+        )
+        assert provider.resolve_link("shot.png", from_path="index.md") == "shot.png"
+
+    def test_a_note_still_wins_a_name_an_attachment_also_claims(
+        self, vault_root: Path, provider
+    ) -> None:
+        """The whole reason attachments are consulted last."""
+        (vault_root / "Projects" / "index.png").write_bytes(b"decoy")
+        provider.index.refresh(force=True)
+        assert provider.resolve_link("index") == "index.md"
+
+    def test_an_attachment_in_trash_does_not_resolve(self, vault_root: Path, provider) -> None:
+        (vault_root / ".trash").mkdir(exist_ok=True)
+        (vault_root / ".trash" / "deleted.png").write_bytes(b"gone")
+        provider.index.refresh(force=True)
+        assert provider.resolve_link("deleted.png") is None
+
+    def test_a_new_attachment_is_picked_up_without_a_restart(
+        self, vault_root: Path, provider
+    ) -> None:
+        assert provider.resolve_link("late.pdf") is None
+        (vault_root / "late.pdf").write_bytes(b"%PDF-1.4")
+        provider.index.refresh(force=True)
+        assert provider.resolve_link("late.pdf") == "late.pdf"
+
+
 class TestReadAndSearch:
     def test_read_reports_resolved_and_unresolved_links(self, provider) -> None:
         note = provider.read("Areas/Work/Acme.md")

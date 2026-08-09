@@ -80,6 +80,13 @@ class VaultIndex:
         self._by_path_key: Dict[str, str] = {}
         self._by_alias: Dict[str, str] = {}
         self._backlinks: Dict[str, List[str]] = {}
+        # The non-note half of the vault, and it is deliberately kept in its own
+        # pair of structures rather than mixed into the four above. A note must
+        # keep winning every lookup it wins today: attachments are consulted
+        # only where nothing else matched, so nothing that resolves now can
+        # start resolving somewhere else because somebody dropped in a PNG.
+        self._assets: set[str] = set()
+        self._assets_by_key: Dict[str, str] = {}
 
     # -- freshness ---------------------------------------------------------- #
 
@@ -125,6 +132,17 @@ class VaultIndex:
             del self._notes[rel]
             changed = True
 
+        # Attachments are names, not content: nothing is parsed and no mtime is
+        # tracked, because the only question ever asked of one is whether a link
+        # target means it. Editing an image cannot change that answer.
+        assets = {
+            vault_paths.to_relative(self.root, absolute)
+            for absolute in vault_paths.walk_attachments(self.root, include_hidden=True)
+        }
+        if assets != self._assets:
+            self._assets = assets
+            changed = True
+
         self._last_walk = now
         self._loaded = True
         if changed or not self._by_path_key:
@@ -166,6 +184,16 @@ class VaultIndex:
         self._by_path_key = {}
         self._by_alias = {}
         self._backlinks = {}
+        self._assets_by_key = {}
+
+        # Shallowest first, so two files of the same name in different folders
+        # resolve to the one nearer the root -- Obsidian's tie-break, and the
+        # same one _by_stem is sorted by below.
+        for rel in sorted(self._assets, key=lambda p: (p.count("/"), len(p), p)):
+            if vault_paths.is_hidden(rel):
+                continue  # an embed must not resolve into .trash or .obsidian
+            self._assets_by_key.setdefault(rel.lower(), rel)
+            self._assets_by_key.setdefault(rel.rsplit("/", 1)[-1].lower(), rel)
 
         for rel, entry in self._notes.items():
             if vault_paths.is_hidden(rel):
@@ -294,13 +322,16 @@ class VaultIndex:
         lowered = needle.lower()
 
         if "/" in lowered:
-            return self._by_path_key.get(lowered)
+            return self._by_path_key.get(lowered) or self._assets_by_key.get(lowered)
 
         stem = lowered[:-3] if lowered.endswith(".md") else lowered
 
         if from_path and "/" in from_path:
             folder = from_path.rsplit("/", 1)[0]
             sibling = self._by_path_key.get(f"{folder.lower()}/{stem}")
+            if sibling:
+                return sibling
+            sibling = self._assets_by_key.get(f"{folder.lower()}/{lowered}")
             if sibling:
                 return sibling
 
@@ -313,10 +344,13 @@ class VaultIndex:
             return direct
 
         candidates = self._by_stem.get(stem)
-        if not candidates:
-            return None
-        # Sorted shallowest-then-shortest in _rebuild_lookups.
-        return candidates[0]
+        if candidates:
+            # Sorted shallowest-then-shortest in _rebuild_lookups.
+            return candidates[0]
+
+        # Last, and only here: an attachment. `![[diagram.png]]` carries its
+        # extension, so it never reaches this point looking like a note.
+        return self._assets_by_key.get(lowered)
 
     def shortest_unique_form(self, rel: str) -> str:
         """How a link to this note should be written after a move.
