@@ -169,6 +169,27 @@ class TestGraph:
         paths = {note.path for note in provider.backlinks("Areas/Work/Acme.md")}
         assert "Fenced.md" not in paths
 
+    def test_a_note_linking_the_same_target_twice_is_one_backlink(self, provider) -> None:
+        """The dedupe moved from scanning the holder list to a set beside it.
+
+        The list was scanned per link, which is quadratic on the note every vault
+        has: the index or MOC note the whole vault points at. Order and
+        uniqueness both have to survive the change.
+        """
+        provider.write(
+            "Repeater.md",
+            "See [[Acme]] and again [[Acme]] and [[Areas/Work/Acme]] once more.\n",
+            mode="create",
+        )
+        paths = [note.path for note in provider.backlinks("Areas/Work/Acme.md")]
+        assert paths.count("Repeater.md") == 1
+        assert len(paths) == len(set(paths))
+
+    def test_backlink_order_is_stable_across_refreshes(self, provider) -> None:
+        first = [note.path for note in provider.backlinks("Areas/Work/Acme.md")]
+        provider.index.refresh(force=True)
+        assert [note.path for note in provider.backlinks("Areas/Work/Acme.md")] == first
+
     def test_links_include_unresolved_by_default(self, provider) -> None:
         links = provider.links("Areas/Work/Acme.md")
         assert any(link.resolved_path is None for link in links)

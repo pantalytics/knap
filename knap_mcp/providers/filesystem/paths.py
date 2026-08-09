@@ -159,6 +159,34 @@ def to_relative(root: Path, absolute: Path) -> str:
     return unicodedata.normalize("NFC", resolved.relative_to(root_resolved).as_posix())
 
 
+def relative_to_walked_root(root_resolved: Path, absolute: Path) -> str:
+    """Vault-relative form of a path that ``walk_notes`` itself produced.
+
+    ``to_relative`` is the one to use for a path that came from a caller: it
+    resolves both sides and refuses anything that lands outside, and that check
+    is the vulnerability class the whole module exists for. This is the other
+    case. ``walk_notes`` starts at ``root.resolve()`` and skips symlinks
+    outright, so every path it yields is already under the resolved root and got
+    there without traversing a link. Resolving it again asks the kernel to
+    confirm something the walk guaranteed, once per note, and on a vault of a
+    few thousand notes that realpath storm is most of what an index refresh
+    costs.
+
+    Pass ``root_resolved`` already resolved, once, by the caller. Only feed this
+    paths from the walk. The guarantee is a POSIX one: ``resolve`` does not cross
+    a bind mount, and ``walk_notes`` refuses symlinks. A Windows junction is
+    neither, so on Windows this is a check worth keeping rather than skipping.
+
+    Misuse still raises ``PathNotAllowedError`` like everything else here, rather
+    than the ``ValueError`` ``relative_to`` would give: comparing ``parts``
+    costs nothing, and a module whose whole job is one error type should not have
+    one entrance that throws a different one.
+    """
+    if not _is_within(absolute, root_resolved):
+        raise _reject("is not under the vault root")
+    return unicodedata.normalize("NFC", absolute.relative_to(root_resolved).as_posix())
+
+
 def is_hidden(rel: str) -> bool:
     """Whether any segment of the path is a dot entry.
 

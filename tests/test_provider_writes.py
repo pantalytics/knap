@@ -87,12 +87,52 @@ class TestWrite:
         assert "typed by the human" in provider.read("Areas/Work/Acme.md").body
 
     def test_overwrite_keeps_the_frontmatter_when_none_is_passed(self, provider) -> None:
-        note = provider.read("Areas/Work/Acme.md")
-        provider.write("Areas/Work/Acme.md", "new body\n", mode="overwrite", expected_rev=note.rev)
-        # The body is replaced; frontmatter is a separate argument and was not
-        # given, so it is gone with the old body. Pinned so the behaviour is a
-        # decision rather than a surprise.
-        assert provider.read("Areas/Work/Acme.md").body == "new body\n"
+        """The body is replaced; the properties are a separate argument and stay.
+
+        This is what the tool promises the caller, and the reason it matters is
+        retrieval: `type`, `tags` and `aliases` are how an AI finds a note again.
+        A model that reads a note, rewrites the prose and writes it back is doing
+        the ordinary thing, and it never sees the frontmatter go.
+        """
+        before = provider.read("Areas/Work/Acme.md")
+        assert before.frontmatter, "fixture must have frontmatter for this to mean anything"
+
+        provider.write(
+            "Areas/Work/Acme.md", "new body\n", mode="overwrite", expected_rev=before.rev
+        )
+
+        after = provider.read("Areas/Work/Acme.md")
+        assert after.body == "new body\n"
+        assert after.frontmatter == before.frontmatter
+
+    def test_overwrite_still_merges_properties_when_they_are_passed(self, provider) -> None:
+        """Keeping the block is not the same as refusing to change it."""
+        before = provider.read("Areas/Work/Acme.md")
+        provider.write(
+            "Areas/Work/Acme.md",
+            "new body\n",
+            mode="overwrite",
+            expected_rev=before.rev,
+            frontmatter={"status": "closed"},
+        )
+
+        after = provider.read("Areas/Work/Acme.md")
+        assert after.frontmatter["status"] == "closed"
+        assert after.body == "new body\n"
+        # Everything the caller did not name is still there.
+        for key, value in before.frontmatter.items():
+            if key != "status":
+                assert after.frontmatter[key] == value
+
+    def test_overwrite_on_a_note_without_frontmatter_adds_none(self, provider) -> None:
+        """No block in, no block out. Preserving must not mean inventing."""
+        provider.write("Plain.md", "first\n", mode="create")
+        note = provider.read("Plain.md")
+        provider.write("Plain.md", "second\n", mode="overwrite", expected_rev=note.rev)
+
+        after = provider.read("Plain.md")
+        assert after.body == "second\n"
+        assert not after.frontmatter
 
     def test_a_path_escape_is_refused_on_write(self, provider) -> None:
         with pytest.raises(PathNotAllowedError):

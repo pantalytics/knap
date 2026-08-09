@@ -89,12 +89,30 @@ def strip_code(text: str) -> str:
     return _INLINE_CODE_RE.sub(blank, without_fences)
 
 
-def parse(raw: str) -> ParsedNote:
+def read_body(path: Path) -> str:
+    """Read a note for scanning: the text, and none of the bookkeeping.
+
+    ``read_text`` also hashes the whole file to build a ``rev``, which is the
+    right thing when the caller is going to hand that rev to a client and
+    exactly wasted work when it is not. Search opens every candidate note and
+    uses none of it.
+    """
+    data = path.read_bytes()
+    return unicodedata.normalize("NFC", data.decode("utf-8", errors="replace"))
+
+
+def parse(raw: str, *, load_properties: bool = True) -> ParsedNote:
     """Split a note into frontmatter and body.
 
     A frontmatter block only counts at the very start of the file and only when
     it closes. An unterminated ``---`` is a horizontal rule in someone's note,
     not a broken header, and treating it as one would swallow their document.
+
+    ``load_properties=False`` skips the YAML parse and leaves ``frontmatter``
+    empty. The block is still split off the body, so ``body`` and
+    ``body_scannable`` are unchanged; only the parsed mapping is missing. Search
+    wants exactly that, because the index already holds the properties and it
+    has compared them before it ever opens the file.
     """
     note = ParsedNote(raw=raw)
     if not raw.startswith(FRONTMATTER_FENCE):
@@ -123,6 +141,9 @@ def parse(raw: str) -> ParsedNote:
     if note.body.startswith("\n"):
         note.body = note.body[1:]
     note.body_scannable = strip_code(note.body)
+
+    if not load_properties:
+        return note
 
     inner = "\n".join(lines[1:close])
     try:

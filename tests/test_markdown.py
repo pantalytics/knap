@@ -1,8 +1,9 @@
 """Parsing and writing a note. The details that corrupt somebody's writing.
 
 Three claims in ``markdown.py`` are load-bearing and each has a section here:
-code is not content, writing frontmatter is not re-dumping it, and a write is
-atomic.
+code is not content, a write is atomic, and reading a note for scanning sees
+exactly what reading it properly would. Writing frontmatter is the fourth and it
+lives in ``test_frontmatter.py``, beside the module it covers.
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ import os
 from pathlib import Path
 
 import pytest
-import yaml
 
 from knap_mcp.providers.filesystem import markdown as md
 
@@ -159,91 +159,6 @@ class TestRewriteLinks:
         assert new is raw
 
 
-class TestEditFrontmatter:
-    """The promise: the body and every untouched property come out byte-identical."""
-
-    def test_an_untouched_property_keeps_its_exact_formatting(self) -> None:
-        raw = "---\naliases: [Acme Corp, ACME]\nstatus: active\n---\n# Acme\n"
-        new = md.edit_frontmatter(raw, {"status": "done"})
-        assert "aliases: [Acme Corp, ACME]" in new  # still flow style, not re-dumped
-        assert "status: done" in new
-        assert new.endswith("# Acme\n")
-
-    def test_a_block_list_stays_a_block_list(self) -> None:
-        raw = "---\ntags:\n  - one\n  - two\nstatus: a\n---\nBody\n"
-        new = md.edit_frontmatter(raw, {"status": "b"})
-        assert "tags:\n  - one\n  - two\n" in new
-
-    def test_the_body_is_never_reflowed(self) -> None:
-        body = "# Title\n\n\n\nOdd    spacing   kept.\n\n- a\n"
-        raw = f"---\na: 1\n---\n{body}"
-        new = md.edit_frontmatter(raw, {"a": 2})
-        assert new.endswith(body)
-
-    def test_none_removes_a_key_and_its_continuation(self) -> None:
-        raw = "---\ntags:\n  - one\n  - two\nstatus: a\n---\nBody\n"
-        new = md.edit_frontmatter(raw, {"tags": None})
-        assert "tags" not in new
-        assert "one" not in new
-        assert "status: a" in new
-
-    def test_a_new_key_is_appended(self) -> None:
-        raw = "---\na: 1\n---\nBody\n"
-        new = md.edit_frontmatter(raw, {"b": "two"})
-        assert new == "---\na: 1\nb: two\n---\nBody\n"
-
-    def test_frontmatter_is_created_when_there_is_none(self) -> None:
-        new = md.edit_frontmatter("# Title\n", {"status": "active"})
-        assert new.startswith("---\n")
-        assert md.parse(new).frontmatter == {"status": "active"}
-        assert new.endswith("# Title\n")
-
-    def test_removing_a_key_that_was_never_there_is_not_an_error(self) -> None:
-        raw = "---\na: 1\n---\nBody\n"
-        assert md.edit_frontmatter(raw, {"zzz": None}) == raw
-
-    def test_no_changes_returns_the_input(self) -> None:
-        raw = "---\na: 1\n---\nBody\n"
-        assert md.edit_frontmatter(raw, {}) == raw
-
-    @pytest.mark.parametrize(
-        "value",
-        ["true", "false", "null", "yes", "no", "1.5", "42", "2026-01-01", "a: b", "", "  x"],
-    )
-    def test_a_string_that_yaml_would_misread_is_quoted(self, value: str) -> None:
-        """The round trip is what matters: what we write must read back equal.
-
-        Writing `status: true` for the string "true" hands the vault a boolean,
-        and the property silently changes type.
-        """
-        new = md.edit_frontmatter("Body\n", {"status": value})
-        assert md.parse(new).frontmatter["status"] == value
-
-    def test_a_list_of_scalars_round_trips(self) -> None:
-        new = md.edit_frontmatter("Body\n", {"tags": ["one", "two/three"]})
-        assert md.parse(new).frontmatter["tags"] == ["one", "two/three"]
-
-    def test_a_nested_value_falls_back_to_a_re_dump_but_stays_correct(self) -> None:
-        """The escape hatch: correct content, and a formatting diff we accept."""
-        raw = "---\na: 1\n---\nBody\n"
-        new = md.edit_frontmatter(raw, {"nested": {"x": [1, 2]}})
-        parsed = md.parse(new)
-        assert parsed.frontmatter["nested"] == {"x": [1, 2]}
-        assert parsed.frontmatter["a"] == 1
-        assert parsed.body == "Body\n"
-
-    def test_a_value_with_a_quote_survives(self) -> None:
-        new = md.edit_frontmatter("Body\n", {"title": 'He said "no"'})
-        assert md.parse(new).frontmatter["title"] == 'He said "no"'
-
-    def test_what_we_write_is_what_pyyaml_reads(self) -> None:
-        """Belt and braces on the hand-rolled scalar writer."""
-        values = {"a": "true", "b": "x: y", "c": "-dash", "d": "#hash", "e": "100%"}
-        new = md.edit_frontmatter("Body\n", values)
-        inner = new.split("---\n")[1]
-        assert yaml.safe_load(inner) == values
-
-
 class TestSections:
     RAW = "# Title\n\n## Log\n\n- one\n\n### Sub\n\n- deep\n\n## Next\n\n- later\n"
 
@@ -382,3 +297,53 @@ class TestRev:
 
 def _boom(*args, **kwargs):
     raise RuntimeError("simulated failure")
+
+
+class TestReadingForScanning:
+    """The two shortcuts search takes, and the promise that they change nothing.
+
+    Search opens every candidate note. It used to hash each one to build a `rev`
+    it discards, and YAML-parse a frontmatter block it had already compared
+    against the index before opening the file. Both are skippable; neither may
+    change what search sees.
+    """
+
+    RAW = "---\ntype: meeting\ntags:\n  - a\n---\n# Title\n\nprose\n\n```\ncode\n```\n"
+
+    def test_load_properties_false_changes_only_the_properties(self) -> None:
+        full = md.parse(self.RAW)
+        lean = md.parse(self.RAW, load_properties=False)
+        assert lean.body == full.body
+        assert lean.body_scannable == full.body_scannable
+        assert lean.frontmatter_raw == full.frontmatter_raw
+        assert lean.raw == full.raw
+        assert lean.frontmatter == {}
+        assert full.frontmatter == {"type": "meeting", "tags": ["a"]}
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "no frontmatter at all\n",
+            "---\nunterminated: block\n\nbody\n",
+            "---\n---\nempty block\n",
+            "---\n: not: valid: yaml:\n---\nbody\n",
+            "",
+        ],
+    )
+    def test_the_two_agree_on_the_body_for_awkward_notes(self, raw: str) -> None:
+        full = md.parse(raw)
+        lean = md.parse(raw, load_properties=False)
+        assert (lean.body, lean.body_scannable) == (full.body, full.body_scannable)
+
+    def test_read_body_matches_read_texts_text(self, tmp_path) -> None:
+        note = tmp_path / "n.md"
+        note.write_text(self.RAW, encoding="utf-8")
+        text, _rev, _size, _mtime = md.read_text(note)
+        assert md.read_body(note) == text
+
+    def test_read_body_decodes_the_same_way_on_a_non_utf8_note(self, tmp_path) -> None:
+        """A vault that picked up a Latin-1 note years ago still opens."""
+        note = tmp_path / "n.md"
+        note.write_bytes(b"caf\xe9 notes\n")
+        text, _rev, _size, _mtime = md.read_text(note)
+        assert md.read_body(note) == text

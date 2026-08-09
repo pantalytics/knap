@@ -277,3 +277,84 @@ class TestWalkNotes:
         found = [paths.to_relative(vault_root, p) for p in paths.walk_notes(vault_root)]
         assert len(found) == len(set(found))
         assert "alias.md" not in found
+
+
+class TestRelativeToWalkedRoot:
+    """The index skips the realpath per note; this is why it is allowed to.
+
+    `to_relative` resolves both sides and refuses anything landing outside, and
+    that check is the reason this module exists. `relative_to_walked_root` skips
+    it because `walk_notes` already guarantees the property, and these tests are
+    the guarantee: if the two ever disagree on a path the walk produced, the
+    faster one is wrong and the index is indexing something it should not.
+    """
+
+    def test_it_agrees_with_to_relative_on_every_walked_path(self, vault_root: Path) -> None:
+        root_resolved = vault_root.resolve()
+        walked = list(paths.walk_notes(vault_root, include_hidden=True))
+        assert walked, "fixture must contain notes or this proves nothing"
+        for absolute in walked:
+            assert paths.relative_to_walked_root(root_resolved, absolute) == paths.to_relative(
+                vault_root, absolute
+            )
+
+    @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+    def test_they_still_agree_when_the_vault_root_is_itself_a_symlink(
+        self, vault_root: Path, tmp_path: Path
+    ) -> None:
+        """The walk resolves the root once, so a symlinked vault is the normal case."""
+        link = tmp_path / "vault-link"
+        link.symlink_to(vault_root, target_is_directory=True)
+        root_resolved = link.resolve()
+        for absolute in paths.walk_notes(link, include_hidden=True):
+            assert paths.relative_to_walked_root(root_resolved, absolute) == paths.to_relative(
+                link, absolute
+            )
+
+    @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+    def test_a_symlink_escaping_the_vault_never_reaches_it(
+        self, vault_root: Path, tmp_path: Path
+    ) -> None:
+        """The walk skips symlinks, so the fast path is never handed an escape.
+
+        Belt and braces on the one thing that would make skipping the resolve
+        unsafe: a note that looks like it is inside and is not.
+
+        The assertion has to follow the path rather than read it. An earlier
+        version of this test checked that the relative form did not start with
+        `..` and did not contain the secret's name, and both are satisfied by
+        the case that matters: a symlink named `escape.md` produces the relative
+        path `escape.md`, which says nothing about where its bytes live. Deleting
+        the symlink skip from `walk_notes` left that version green while the file
+        outside the vault was readable. So resolve what `root / rel` actually
+        reaches, which is what a caller does with it.
+        """
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "Secret.md").write_text("not yours\n")
+        (vault_root / "escape.md").symlink_to(outside / "Secret.md")
+        (vault_root / "escape-dir").symlink_to(outside, target_is_directory=True)
+
+        root_resolved = vault_root.resolve()
+        walked = list(paths.walk_notes(vault_root, include_hidden=True))
+        assert walked, "fixture must contain notes or this proves nothing"
+        for absolute in walked:
+            rel = paths.relative_to_walked_root(root_resolved, absolute)
+            landed = (vault_root / rel).resolve()
+            assert landed.is_relative_to(root_resolved), f"{rel} reaches {landed}"
+            # And the fast path agrees with the checked one on every walked path,
+            # which is the property that makes skipping the resolve legitimate.
+            assert rel == paths.to_relative(vault_root, absolute)
+
+    def test_misuse_raises_the_modules_own_error(self, vault_root: Path, tmp_path: Path) -> None:
+        """One module, one error type. `relative_to` would raise ValueError."""
+        outside = tmp_path / "elsewhere" / "note.md"
+        with pytest.raises(PathNotAllowedError):
+            paths.relative_to_walked_root(vault_root.resolve(), outside)
+
+    def test_the_error_does_not_echo_the_path(self, vault_root: Path, tmp_path: Path) -> None:
+        """Same rule as the rest of the module: an error is not a probe answering itself."""
+        outside = tmp_path / "elsewhere" / "Secret.md"
+        with pytest.raises(PathNotAllowedError) as excinfo:
+            paths.relative_to_walked_root(vault_root.resolve(), outside)
+        assert "Secret" not in str(excinfo.value)
