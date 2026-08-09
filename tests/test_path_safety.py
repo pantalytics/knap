@@ -319,6 +319,15 @@ class TestRelativeToWalkedRoot:
 
         Belt and braces on the one thing that would make skipping the resolve
         unsafe: a note that looks like it is inside and is not.
+
+        The assertion has to follow the path rather than read it. An earlier
+        version of this test checked that the relative form did not start with
+        `..` and did not contain the secret's name, and both are satisfied by
+        the case that matters: a symlink named `escape.md` produces the relative
+        path `escape.md`, which says nothing about where its bytes live. Deleting
+        the symlink skip from `walk_notes` left that version green while the file
+        outside the vault was readable. So resolve what `root / rel` actually
+        reaches, which is what a caller does with it.
         """
         outside = tmp_path / "outside"
         outside.mkdir()
@@ -327,7 +336,25 @@ class TestRelativeToWalkedRoot:
         (vault_root / "escape-dir").symlink_to(outside, target_is_directory=True)
 
         root_resolved = vault_root.resolve()
-        for absolute in paths.walk_notes(vault_root, include_hidden=True):
+        walked = list(paths.walk_notes(vault_root, include_hidden=True))
+        assert walked, "fixture must contain notes or this proves nothing"
+        for absolute in walked:
             rel = paths.relative_to_walked_root(root_resolved, absolute)
-            assert not rel.startswith("..")
-            assert "Secret.md" not in rel
+            landed = (vault_root / rel).resolve()
+            assert landed.is_relative_to(root_resolved), f"{rel} reaches {landed}"
+            # And the fast path agrees with the checked one on every walked path,
+            # which is the property that makes skipping the resolve legitimate.
+            assert rel == paths.to_relative(vault_root, absolute)
+
+    def test_misuse_raises_the_modules_own_error(self, vault_root: Path, tmp_path: Path) -> None:
+        """One module, one error type. `relative_to` would raise ValueError."""
+        outside = tmp_path / "elsewhere" / "note.md"
+        with pytest.raises(PathNotAllowedError):
+            paths.relative_to_walked_root(vault_root.resolve(), outside)
+
+    def test_the_error_does_not_echo_the_path(self, vault_root: Path, tmp_path: Path) -> None:
+        """Same rule as the rest of the module: an error is not a probe answering itself."""
+        outside = tmp_path / "elsewhere" / "Secret.md"
+        with pytest.raises(PathNotAllowedError) as excinfo:
+            paths.relative_to_walked_root(vault_root.resolve(), outside)
+        assert "Secret" not in str(excinfo.value)

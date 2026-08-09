@@ -173,8 +173,17 @@ def relative_to_walked_root(root_resolved: Path, absolute: Path) -> str:
     costs.
 
     Pass ``root_resolved`` already resolved, once, by the caller. Only feed this
-    paths from the walk.
+    paths from the walk. The guarantee is a POSIX one: ``resolve`` does not cross
+    a bind mount, and ``walk_notes`` refuses symlinks. A Windows junction is
+    neither, so on Windows this is a check worth keeping rather than skipping.
+
+    Misuse still raises ``PathNotAllowedError`` like everything else here, rather
+    than the ``ValueError`` ``relative_to`` would give: comparing ``parts``
+    costs nothing, and a module whose whole job is one error type should not have
+    one entrance that throws a different one.
     """
+    if not _is_within(absolute, root_resolved):
+        raise _reject("is not under the vault root")
     return unicodedata.normalize("NFC", absolute.relative_to(root_resolved).as_posix())
 
 
