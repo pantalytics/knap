@@ -136,7 +136,7 @@ class VaultIndex:
         # tracked, because the only question ever asked of one is whether a link
         # target means it. Editing an image cannot change that answer.
         assets = {
-            vault_paths.to_relative(self.root, absolute)
+            vault_paths.relative_to_walked_root(root_resolved, absolute)
             for absolute in vault_paths.walk_attachments(self.root, include_hidden=True)
         }
         if assets != self._assets:
