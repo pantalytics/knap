@@ -21,7 +21,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from . import markdown as md
 from . import paths as vault_paths
@@ -102,12 +102,13 @@ class VaultIndex:
         # decide what a hidden note may take part in: not link resolution, not
         # backlinks, not tag counts, because a link must not resolve into
         # `.trash` and a deleted note's tags are not the vault's tags.
+        root_resolved = self.root.resolve()
         for absolute in vault_paths.walk_notes(self.root, include_hidden=True):
             try:
                 stat = absolute.stat()
             except OSError:
                 continue
-            rel = vault_paths.to_relative(self.root, absolute)
+            rel = vault_paths.relative_to_walked_root(root_resolved, absolute)
             seen[rel] = (stat.st_size, stat.st_mtime_ns)
 
         changed = False
@@ -184,6 +185,12 @@ class VaultIndex:
         for paths in self._by_stem.values():
             paths.sort(key=lambda rel: (rel.count("/"), len(rel), rel))
 
+        # `seen` shadows `_backlinks` purely so the duplicate check is a hash
+        # lookup. It was `rel not in holders` on the list, which is a scan, and
+        # the note that suffers is the one every vault has: the MOC or index
+        # note the whole vault links to, whose holder list is as long as the
+        # vault. Same order out, same list type, one dict thrown away at the end.
+        seen: Dict[str, Set[str]] = {}
         for rel, entry in self._notes.items():
             if vault_paths.is_hidden(rel):
                 continue  # a trashed note's links are not backlinks
@@ -191,7 +198,8 @@ class VaultIndex:
                 resolved = self.resolve(target, from_path=rel)
                 if resolved and resolved != rel:
                     holders = self._backlinks.setdefault(resolved, [])
-                    if rel not in holders:
+                    if rel not in seen.setdefault(resolved, set()):
+                        seen[resolved].add(rel)
                         holders.append(rel)
 
     # -- reading ------------------------------------------------------------ #

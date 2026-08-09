@@ -277,3 +277,57 @@ class TestWalkNotes:
         found = [paths.to_relative(vault_root, p) for p in paths.walk_notes(vault_root)]
         assert len(found) == len(set(found))
         assert "alias.md" not in found
+
+
+class TestRelativeToWalkedRoot:
+    """The index skips the realpath per note; this is why it is allowed to.
+
+    `to_relative` resolves both sides and refuses anything landing outside, and
+    that check is the reason this module exists. `relative_to_walked_root` skips
+    it because `walk_notes` already guarantees the property, and these tests are
+    the guarantee: if the two ever disagree on a path the walk produced, the
+    faster one is wrong and the index is indexing something it should not.
+    """
+
+    def test_it_agrees_with_to_relative_on_every_walked_path(self, vault_root: Path) -> None:
+        root_resolved = vault_root.resolve()
+        walked = list(paths.walk_notes(vault_root, include_hidden=True))
+        assert walked, "fixture must contain notes or this proves nothing"
+        for absolute in walked:
+            assert paths.relative_to_walked_root(root_resolved, absolute) == paths.to_relative(
+                vault_root, absolute
+            )
+
+    @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+    def test_they_still_agree_when_the_vault_root_is_itself_a_symlink(
+        self, vault_root: Path, tmp_path: Path
+    ) -> None:
+        """The walk resolves the root once, so a symlinked vault is the normal case."""
+        link = tmp_path / "vault-link"
+        link.symlink_to(vault_root, target_is_directory=True)
+        root_resolved = link.resolve()
+        for absolute in paths.walk_notes(link, include_hidden=True):
+            assert paths.relative_to_walked_root(root_resolved, absolute) == paths.to_relative(
+                link, absolute
+            )
+
+    @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+    def test_a_symlink_escaping_the_vault_never_reaches_it(
+        self, vault_root: Path, tmp_path: Path
+    ) -> None:
+        """The walk skips symlinks, so the fast path is never handed an escape.
+
+        Belt and braces on the one thing that would make skipping the resolve
+        unsafe: a note that looks like it is inside and is not.
+        """
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "Secret.md").write_text("not yours\n")
+        (vault_root / "escape.md").symlink_to(outside / "Secret.md")
+        (vault_root / "escape-dir").symlink_to(outside, target_is_directory=True)
+
+        root_resolved = vault_root.resolve()
+        for absolute in paths.walk_notes(vault_root, include_hidden=True):
+            rel = paths.relative_to_walked_root(root_resolved, absolute)
+            assert not rel.startswith("..")
+            assert "Secret.md" not in rel

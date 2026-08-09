@@ -130,10 +130,13 @@ class VaultSearch:
                 return f"{key}: {value}"
 
         try:
-            text, _, _, _ = md.read_text(self.root / entry.path)
+            text = md.read_body(self.root / entry.path)
         except OSError:
             return None
-        note = md.parse(text)
+        # No rev and no YAML: this is the hot loop of the whole package, it opens
+        # every candidate note, and it uses neither. The properties were checked
+        # against the index a few lines up, before the file was opened at all.
+        note = md.parse(text, load_properties=False)
         # Searched against the code-stripped copy so a hit inside a fenced block
         # does not surface, but the excerpt is cut from the real body: offsets
         # are shared between the two by construction.
