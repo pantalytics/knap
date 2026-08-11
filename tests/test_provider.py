@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from knap_mcp.providers.filesystem import excerpts
 from knap_mcp.providers.filesystem.provider import FilesystemVaultProvider
 from knap_mcp.providers.protocol import ProviderError
 
@@ -264,6 +265,83 @@ class TestGraph:
     def test_tags_are_most_used_first(self, provider) -> None:
         counts = [tag.count for tag in provider.tags()]
         assert counts == sorted(counts, reverse=True)
+
+
+class TestExcerpts:
+    """#6: the schema promises the opening for a listing, and got "" instead.
+
+    `search` passed its match window through and the other two call sites did
+    not, so `vault_list_notes` and `vault_backlinks` answered with an empty
+    string on every note. A client that cannot see what a note is about from a
+    listing has to open all of them, which is the cost the excerpt exists to
+    avoid.
+    """
+
+    @staticmethod
+    def _excerpt_for(provider, path: str) -> str:
+        notes, _ = provider.list_notes(limit=100)
+        return next(note.excerpt for note in notes if note.path == path)
+
+    def test_a_listing_carries_the_opening(self, provider) -> None:
+        excerpt = self._excerpt_for(provider, "Areas/Work/Acme.md")
+        assert excerpt.startswith("The renewal is due.")
+
+    def test_every_note_in_a_listing_is_offered_one(self, provider) -> None:
+        """The bug was not partial: nothing in a listing had an excerpt."""
+        notes, _ = provider.list_notes(limit=100)
+        with_prose = [note for note in notes if note.path != "Templates/Daily.md"]
+        assert with_prose
+        assert all(note.excerpt for note in with_prose)
+
+    def test_backlinks_carry_it_too(self, provider) -> None:
+        """The second call site in the issue, and the one that cannot be paged."""
+        backlinks = provider.backlinks("Areas/Work/Acme.md")
+        by_path = {note.path: note.excerpt for note in backlinks}
+        assert by_path["Areas/Work/Meetings/index.md"] == "See [[Acme Corp]]."
+
+    def test_the_leading_heading_is_not_the_excerpt(self, provider) -> None:
+        """An excerpt that repeats the title is the same as not having one."""
+        excerpt = self._excerpt_for(provider, "Projects/Meeting notes.md")
+        assert "# Meeting notes" not in excerpt
+        assert excerpt.startswith("Spoke to [[Acme Corp]]")
+
+    def test_a_note_of_only_headings_gets_nothing_rather_than_its_title(self, provider) -> None:
+        """`Templates/Daily.md` is headings and blanks. Empty is the honest answer."""
+        assert self._excerpt_for(provider, "Templates/Daily.md") == ""
+
+    def test_a_long_opening_is_capped_and_says_so(self, provider) -> None:
+        provider.write("Long.md", "word " * 200, mode="create")
+        excerpt = self._excerpt_for(provider, "Long.md")
+        assert excerpt.endswith("...")
+        assert len(excerpt) == excerpts.OPENING_CHARS + 3
+
+    def test_a_search_still_quotes_the_match_not_the_opening(self, provider) -> None:
+        """The one call site that worked has to keep working.
+
+        "Kickoff" sits below the four lines the opening is drawn from, so a hit
+        that mentions it can only have come from the match window.
+        """
+        notes, _ = provider.search("Kickoff")
+        assert [note.path for note in notes] == ["Areas/Work/Acme.md"]
+        assert "Kickoff" in notes[0].excerpt
+        assert "Kickoff" not in self._excerpt_for(provider, "Areas/Work/Acme.md")
+
+    def test_a_filter_only_search_falls_back_to_the_opening(self, provider) -> None:
+        """No query means no match to quote, so the opening stands in."""
+        notes, _ = provider.search(tag="client")
+        assert [note.path for note in notes] == ["Areas/Work/Acme.md"]
+        assert notes[0].excerpt.startswith("The renewal is due.")
+
+    def test_an_edit_in_obsidian_changes_the_excerpt(self, provider, obsidian_edits) -> None:
+        """The opening is held in the index, so it has to fall out on an edit.
+
+        A cached excerpt that survives the note it was cut from is worse than no
+        excerpt: it reads as current and is not.
+        """
+        assert self._excerpt_for(provider, "Templates/Daily.md") == ""
+        obsidian_edits(provider.root / "Templates" / "Daily.md", "\nCaptured the standup.\n")
+        provider.index.refresh(force=True)
+        assert self._excerpt_for(provider, "Templates/Daily.md") == "Captured the standup."
 
 
 class TestIndexFreshness:
