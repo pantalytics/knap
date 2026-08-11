@@ -84,8 +84,9 @@ package.
   `paths.py` (confinement), `markdown.py` (scanning: links, headings, tags,
   atomic write, revs), `frontmatter.py` (writing properties without rewriting the
   block), `index.py` (lazy link/tag/property index, invalidated on mtime, never
-  rebuilt per call), `search.py`, `periodic.py` (daily notes from the vault's own
-  settings), `writes.py` (the write half, as a mixin), `provider.py`.
+  rebuilt per call), `search.py`, `excerpts.py` (the note opening a listing shows
+  when there is no match to quote), `periodic.py` (daily notes from the vault's
+  own settings), `writes.py` (the write half, as a mixin), `provider.py`.
 - **The index holds hidden notes and the lookups exclude them.** Indexing with
   `include_hidden=False` meant `include_hidden=True` on a search had nothing to
   find, because the notes were never there. So the walk takes everything, and
@@ -209,7 +210,7 @@ make test-all
 | `__main__.py` | CLI entry: argparse, transport selection |
 | `config.py` | `KnapConfig` dataclass + env loading |
 | `providers/protocol.py` | `VaultProvider` protocol + value objects |
-| `providers/filesystem/` | The backend: paths, markdown, frontmatter, index, search, periodic, writes |
+| `providers/filesystem/` | The backend: paths, markdown, frontmatter, index, search, excerpts, periodic, writes |
 | `providers/factory.py` | Backend selection from config |
 | `tools/handler.py` | `VaultToolHandler` (mixins) + `register_tools` |
 | `tools/vault/` | Tools as mixins: browse, query, read, write, organize, graph, periodic, attachments |

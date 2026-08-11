@@ -92,10 +92,11 @@ class VaultSearch:
         candidates.sort(key=lambda item: item.mtime_ns, reverse=True)
 
         if not needle:
+            # No query, so nothing to quote: the opening stands in, and it comes
+            # off the index rather than out of the file. This used to open every
+            # note on the page to read text the index had already parsed.
             page = candidates[offset : offset + limit]
-            return [Hit(entry=entry, excerpt=_opening(self.root, entry)) for entry in page], len(
-                candidates
-            )
+            return [Hit(entry=entry, excerpt=entry.excerpt) for entry in page], len(candidates)
 
         hits: List[Hit] = []
         scanned = 0
@@ -145,27 +146,6 @@ class VaultSearch:
         if position == -1:
             return None
         return _window(note.body, position, len(needle))
-
-    def _opening(self, entry: NoteEntry) -> str:
-        return _opening(self.root, entry)
-
-
-def _opening(root: Path, entry: NoteEntry, chars: int = 160) -> str:
-    """The first prose of a note, for a listing with no search term.
-
-    Skips the frontmatter and the leading H1, because "# Meeting notes" under a
-    note called "Meeting notes" tells a client nothing it does not have.
-    """
-    try:
-        text, _, _, _ = md.read_text(root / entry.path)
-    except OSError:
-        return ""
-    body = md.parse(text).body.strip()
-    lines = [line for line in body.split("\n")]
-    while lines and (not lines[0].strip() or lines[0].lstrip().startswith("#")):
-        lines.pop(0)
-    opening = " ".join(line.strip() for line in lines[:4]).strip()
-    return opening[:chars] + ("..." if len(opening) > chars else "")
 
 
 def _window(body: str, position: int, length: int) -> str:

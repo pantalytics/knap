@@ -23,13 +23,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
+from . import excerpts
 from . import markdown as md
 from . import paths as vault_paths
 
 
 @dataclass
 class NoteEntry:
-    """One note as the index knows it. No body: that is read on demand."""
+    """One note as the index knows it. No body: that is read on demand.
+
+    ``excerpt`` is not a body and not a step towards holding one. It is a couple
+    of lines, derived at parse time from a body that was in memory anyway, and
+    dropped the moment the note's mtime moves -- the same terms the headings and
+    the properties beside it are held on.
+    """
 
     path: str
     rev: str
@@ -42,6 +49,8 @@ class NoteEntry:
     properties: Dict[str, Any] = field(default_factory=dict)
     #: Link targets exactly as written in the note, in document order.
     link_targets: List[str] = field(default_factory=list)
+    #: The note's opening prose, for a listing that has no match to quote.
+    excerpt: str = ""
 
     @property
     def basename(self) -> str:
@@ -177,6 +186,11 @@ class VaultIndex:
             headings=md.headings_of(note),
             properties=dict(note.frontmatter),
             link_targets=[link.target for link in md.raw_links_of(note)],
+            # Derived here rather than when a listing asks for it, because here
+            # the body is already in hand. Read on demand it would cost one file
+            # open per note listed, and `backlinks` is not paginated: the MOC that
+            # the whole vault links to would open the whole vault.
+            excerpt=excerpts.opening_of(note),
         )
 
     def _rebuild_lookups(self) -> None:

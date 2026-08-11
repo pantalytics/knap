@@ -336,6 +336,14 @@ class FilesystemVaultProvider(WriteOperationsMixin):
         return f"{frontmatter_raw}\n{body}"
 
     def _summary(self, entry: NoteEntry, *, excerpt: str = "") -> NoteSummary:
+        """One summary shape for a listing, a search hit and a backlink.
+
+        ``excerpt`` is the text around a search match. Without one -- a listing,
+        a backlink list, a filter-only search -- the note's opening stands in,
+        which is what the protocol and the tool schema both promise. Defaulting
+        it to "" here was the whole of #6: three call sites, two of them silently
+        answering with nothing.
+        """
         return NoteSummary(
             path=entry.path,
             title=entry.title,
@@ -343,7 +351,7 @@ class FilesystemVaultProvider(WriteOperationsMixin):
             size=entry.size,
             modified=_iso(entry.mtime_ns),
             tags=list(entry.tags),
-            excerpt=excerpt,
+            excerpt=excerpt or entry.excerpt,
         )
 
     def _link_refs(self, rel: str, note: md.ParsedNote) -> List[LinkRef]:
