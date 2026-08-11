@@ -305,6 +305,50 @@ class TestExcerpts:
         assert "# Meeting notes" not in excerpt
         assert excerpt.startswith("Spoke to [[Acme Corp]]")
 
+    def test_a_section_heading_ends_the_opening_rather_than_joining_it(self, provider) -> None:
+        """A heading like "## Log" describes the note's shape, not the note.
+
+        Skipping only the *leading* heading left every interior one in the text,
+        so the listing #6 asked for would have answered with the lead-in plus a
+        stray "## Log" on any note organised into sections, which is most of them.
+        """
+        excerpt = self._excerpt_for(provider, "Areas/Work/Acme.md")
+        assert excerpt == "The renewal is due. See [[Meeting notes]] and [[Something unwritten]]."
+
+    def test_a_fenced_block_is_not_the_opening(self, provider) -> None:
+        """`markdown.py` says code is not content, and this is a scanner too.
+
+        A note that opens on an example was described to the client as "```"
+        followed by the contents of the fence.
+        """
+        assert "```" not in self._excerpt_for(provider, "Projects/Meeting notes.md")
+        provider.write(
+            "Fenced.md", "# Fenced\n\n```\nx = 1\n```\n\nWhat it is for.\n", mode="create"
+        )
+        assert self._excerpt_for(provider, "Fenced.md") == "What it is for."
+
+    def test_inline_code_keeps_its_text(self, provider) -> None:
+        """Blanking code decides which lines are prose; it must not eat them.
+
+        The line is chosen on the code-blanked copy and read off the real body,
+        so "Run `npm install` first" arrives whole rather than as "Run first".
+        """
+        provider.write("Inline.md", "Run `npm install` first.\n", mode="create")
+        assert self._excerpt_for(provider, "Inline.md") == "Run `npm install` first."
+
+    def test_an_opening_tag_is_not_mistaken_for_a_heading(self, provider) -> None:
+        """`#meeting` starts with a hash and is a tag. A heading needs the space."""
+        provider.write("Tagged.md", "#meeting was useful today\n", mode="create")
+        assert self._excerpt_for(provider, "Tagged.md") == "#meeting was useful today"
+
+    def test_blank_lines_do_not_count_against_the_line_budget(self, provider) -> None:
+        """Markdown is written double-spaced, so raw lines would have halved it."""
+        body = "\n\n".join(["One.", "Two.", "Three.", "Four.", "Five."])
+        provider.write("Spaced.md", body, mode="create")
+        excerpt = self._excerpt_for(provider, "Spaced.md")
+        assert excerpt == "One. Two. Three. Four."
+        assert len(excerpt.split()) == excerpts.OPENING_LINES
+
     def test_a_note_of_only_headings_gets_nothing_rather_than_its_title(self, provider) -> None:
         """`Templates/Daily.md` is headings and blanks. Empty is the honest answer."""
         assert self._excerpt_for(provider, "Templates/Daily.md") == ""
@@ -318,7 +362,7 @@ class TestExcerpts:
     def test_a_search_still_quotes_the_match_not_the_opening(self, provider) -> None:
         """The one call site that worked has to keep working.
 
-        "Kickoff" sits below the four lines the opening is drawn from, so a hit
+        "Kickoff" sits under "## Log", past where the lead-in stops, so a hit
         that mentions it can only have come from the match window.
         """
         notes, _ = provider.search("Kickoff")
