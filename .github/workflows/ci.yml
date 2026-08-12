@@ -7,10 +7,16 @@
 name: CI
 
 on:
-  push:
-    branches-ignore: [main]
+  # No push trigger. Paired with pull_request it ran the whole matrix twice for
+  # every commit on a branch with a PR open: two runs, same sha, seconds apart.
+  # main was already excluded, so pull_request alone loses no coverage.
   pull_request:
   workflow_call: # so a deploy workflow can reuse this exact job
+
+# Three pushes in a minute should not leave three full runs grinding through.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
