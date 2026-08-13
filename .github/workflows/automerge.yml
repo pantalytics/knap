@@ -1,118 +1,160 @@
 # A pull request that goes green merges itself.
 #
-# Nothing here decides what green means. GitHub's own auto-merge does the
-# waiting, and the branch ruleset on `main` names the checks it waits for. One
-# list, in one place: a job added to ci.yml is not waited for until somebody
-# adds it to the ruleset on purpose.
+# ── Why this does the waiting itself ────────────────────────────────────────
+# GitHub has a feature for exactly this, and we cannot have it. Auto-merge and
+# rulesets are GitHub Team and Enterprise on an organisation's private
+# repositories, and Allow auto-merge is greyed out in this repository's
+# settings. Their own rulesets page is explicit: "A ruleset is a named list of
+# rules that applies to a repository or to multiple repositories in an
+# organisation for customers on GitHub Team and GitHub Enterprise plans."
+# The day this package goes public that stops being true, and this file can be
+# replaced by two settings.
 #
-# This package has no deploy of its own, so a merge here is a merge and nothing
-# more. It is knap-mcp-admin that ships, and it does so from a tag-pinned
-# dependency rather than from main, so nothing reaches production because a
-# pull request landed here.
+# So there is no required-check list to lean on, and this file has to decide
+# what green means. It decides the only way that does not drift: **every check
+# on the commit, whatever it is called.** Not a list somebody has to remember to
+# update. A job added to ci.yml is waited for the day it is added.
 #
-# Three things are never merged:
+# Every refusal below ends in "do not merge", so the direction of any mistake is
+# a pull request that sits there rather than one that ships.
 #
-#   - A draft. An agent opens its pull request as a draft, so draft is the hold
-#     and Ready for review is the act that means ship it. Converting one back to
-#     draft switches auto-merge off again.
-#   - A pull request from a fork. Its checks run code the fork wrote, so a green
-#     run says nothing about whether it should land. This package is meant to be
-#     public, so that is the ordinary case rather than the exception.
-#   - Anything at all, while AUTOMERGE_TOKEN is missing. That one warns and
-#     stops rather than failing the job: without the token nothing merges, which
-#     is the safe direction, and failing would put a red check on every pull
-#     request in the repository for a setting somebody has not got to yet.
+#   - Nothing has reported yet, or something is still running.
+#   - Anything concluded other than success, skipped or neutral.
+#   - Nothing reported at all. A commit with no checks is not a green commit.
+#   - The pull request is a draft. An agent opens its pull request as a draft,
+#     so draft is the hold and Ready for review is the act that means ship it.
+#   - The head is a fork's branch. Its checks ran code the fork wrote, and this
+#     package is meant to be public, so that is the ordinary case here rather
+#     than the exception.
 #
-# AUTOMERGE_TOKEN is a fine-grained personal access token scoped to this
-# repository alone, with Contents: read and write and Pull requests: read and
-# write. Nothing else. The runner's own GITHUB_TOKEN is deliberately not used:
-# a push it makes starts no workflow run, which costs nothing here and costs the
-# whole deploy in knap-mcp-admin, so both repositories do the same thing for one
-# reason rather than two things for none.
+# No deploy hangs off a merge here: knap-mcp-admin ships from a tag-pinned
+# dependency, not from this branch. The file is the same shape as the one in the
+# other three repositories on purpose, including AUTOMERGE_TOKEN, a fine-grained
+# personal access token scoped to this repository with Contents and Pull
+# requests write. The runner's own GITHUB_TOKEN is not used: a push it makes
+# starts no workflow run, which costs nothing here and costs the whole deploy in
+# knap-mcp-admin, so both repositories do the same thing for one reason rather
+# than two things for none.
 #
-# ── What has to be switched on before this does anything ────────────────────
-# 1. Settings -> General -> Pull Requests -> Allow auto-merge.
-# 2. A ruleset on `main` with the CI checks required. Without one, a pull
-#    request is mergeable the moment it is opened, there is nothing to wait for,
-#    and `gh pr merge --auto` refuses with "Pull request is in clean status".
-#    Settings -> Rules -> New branch ruleset, or:
+# ── The one list that does need maintaining ─────────────────────────────────
+# `workflows:` below is what wakes this file up, not what it waits for. Add a
+# workflow that runs on pull requests and it should go in the list, or the last
+# check to finish may be one that wakes nobody and the pull request waits
+# forever. Getting it wrong cannot merge something early; it can only fail to
+# merge at all.
 #
-#      gh api --method POST repos/pantalytics/knap/rulesets \
-#        -f name='main' -f target='branch' -f enforcement='active' \
-#        -F 'conditions[ref_name][include][]=~DEFAULT_BRANCH' \
-#        -f 'rules[][type]=required_status_checks' \
-#        -F 'rules[][parameters][strict_required_status_checks_policy]=false' \
-#        -f 'rules[][parameters][required_status_checks][][context]=test (3.10)' \
-#        -f 'rules[][parameters][required_status_checks][][context]=test (3.13)' \
-#        -f 'rules[][parameters][required_status_checks][][context]=docker'
+# workflow_run also only ever runs the copy of this file on the default branch,
+# so this does nothing until it is merged, including on its own pull request.
 #
-#    Those three are what ci.yml reports today: the test job once per Python in
-#    its matrix, and the container build. A ruleset with no bypass actor also
-#    stops a direct push to `main`; add Repository admin as a bypass in the UI
-#    if that is not wanted.
+# The reasoning is recorded as ADR-0056 in knap-mcp-admin.
 name: Auto-merge
 
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  # Marking a draft ready starts no CI, so nothing else would wake up for a
+  # pull request whose checks are already green and only needed the hold lifted.
   pull_request:
-    types: [opened, reopened, ready_for_review, synchronize, converted_to_draft]
+    types: [ready_for_review]
 
-# Nothing here reads the repository. The work is two API calls, made with a
-# token that is not the runner's, so the runner's needs no reach at all.
+# The runner's own token is used for nothing. Every call below carries the PAT.
 permissions: {}
 
+# Never cancel: a cancelled run may be one that is mid-merge.
 concurrency:
-  group: automerge-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: automerge-${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref }}
+  cancel-in-progress: false
 
 jobs:
   auto-merge:
-    # A fork's pull request is handed no secrets, so without this it would fail
-    # on the token check below and paint every fork contribution red.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # A fork's branch, from either trigger. On the pull_request path a fork is
+    # handed no secrets and this would fail on the token check; on the
+    # workflow_run path it would run with our secrets against code the fork
+    # wrote, which is the more expensive half of the same rule.
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.head_repository.full_name == github.repository) ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - name: The token has to be ours
-        id: token
         env:
           GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::AUTOMERGE_TOKEN is not set, so nothing merges itself. Add a fine-grained PAT with Contents and Pull requests write, scoped to this repository."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "::error::AUTOMERGE_TOKEN is not set. Add a fine-grained PAT with Contents and Pull requests write, scoped to this repository."
+            exit 1
           fi
 
-      - name: Switch auto-merge on, or off for a draft
-        if: steps.token.outputs.ready == 'true'
+      - name: Merge it, if everything on the commit is green
         env:
           GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
           REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          DRAFT: ${{ github.event.pull_request.draft }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
 
-          on=$(gh pr view "$PR" --repo "$REPO" \
-                 --json autoMergeRequest --jq '.autoMergeRequest != null')
+          # Which pull request is this commit the head of. A push to a branch
+          # with no pull request open is not our business.
+          pr=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+                 --jq "[.[] | select(.state == \"open\" and .head.sha == \"$SHA\")][0].number // empty")
+          if [ -z "$pr" ]; then
+            echo "No open pull request has $SHA as its head. Nothing to do."
+            exit 0
+          fi
 
-          if [ "$DRAFT" = "true" ]; then
-            if [ "$on" = "true" ]; then
-              gh pr merge "$PR" --repo "$REPO" --disable-auto
-              echo "Draft. Auto-merge switched off."
-            else
-              echo "Draft. Nothing to do until it is marked ready for review."
+          draft=$(gh api "repos/$REPO/pulls/$pr" --jq .draft)
+          if [ "$draft" = "true" ]; then
+            echo "Pull request #$pr is a draft. Holding until it is marked ready for review."
+            exit 0
+          fi
+
+          # Every check on the commit, by whatever name. filter=latest is the
+          # API's default, so a re-run replaces its earlier attempt rather than
+          # counting twice.
+          total=0; waiting=0; failed=0
+          while IFS=$'\t' read -r name status conclusion; do
+            [ -z "$name" ] && continue
+            total=$((total + 1))
+            if [ "$status" != "completed" ]; then
+              waiting=$((waiting + 1))
+              echo "waiting: $name ($status)"
+              continue
             fi
+            case "$conclusion" in
+              success|skipped|neutral) ;;
+              *) failed=$((failed + 1)); echo "not green: $name ($conclusion)" ;;
+            esac
+          done < <(gh api --paginate "repos/$REPO/commits/$SHA/check-runs" \
+                     --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv')
+
+          # Commit statuses are the older mechanism and some tools still post
+          # them. total_count 0 means nobody posts any here, which reads as
+          # "pending" from this endpoint and must not be read as one.
+          st=$(gh api "repos/$REPO/commits/$SHA/status" --jq '"\(.total_count) \(.state)"')
+          st_count=${st%% *}; st_state=${st##* }
+          if [ "$st_count" != "0" ] && [ "$st_state" != "success" ]; then
+            echo "Commit statuses are $st_state. Not merging."
             exit 0
           fi
 
-          if [ "$on" = "true" ]; then
-            echo "Auto-merge is already on, and a push does not turn it off."
+          if [ "$total" -eq 0 ]; then
+            echo "::warning::No checks have reported on $SHA. A commit nothing tested is not a green commit, so #$pr is not being merged."
+            exit 0
+          fi
+          if [ "$waiting" -gt 0 ]; then
+            echo "$waiting of $total checks still running. The last one to finish wakes this again."
+            exit 0
+          fi
+          if [ "$failed" -gt 0 ]; then
+            echo "$failed of $total checks are not green. Not merging #$pr."
             exit 0
           fi
 
+          echo "All $total checks green. Merging #$pr."
           # Squash: every commit on main is one pull request, and the history
-          # says so. A failure here is usually one of the two settings in the
-          # header, and the message gh prints names which.
-          gh pr merge "$PR" --repo "$REPO" --auto --squash
-          echo "Auto-merge on. This merges itself once the required checks pass."
+          # says so. A conflict with main fails here on purpose, because that
+          # needs somebody.
+          gh pr merge "$pr" --repo "$REPO" --squash
