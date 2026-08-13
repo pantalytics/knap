@@ -18,7 +18,10 @@
 #   - A pull request from a fork. Its checks run code the fork wrote, so a green
 #     run says nothing about whether it should land. This package is meant to be
 #     public, so that is the ordinary case rather than the exception.
-#   - Anything at all, while AUTOMERGE_TOKEN is missing.
+#   - Anything at all, while AUTOMERGE_TOKEN is missing. That one warns and
+#     stops rather than failing the job: without the token nothing merges, which
+#     is the safe direction, and failing would put a red check on every pull
+#     request in the repository for a setting somebody has not got to yet.
 #
 # AUTOMERGE_TOKEN is a fine-grained personal access token scoped to this
 # repository alone, with Contents: read and write and Pull requests: read and
@@ -69,15 +72,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: The token has to be ours
+        id: token
         env:
           GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::error::AUTOMERGE_TOKEN is not set. Add a fine-grained PAT with Contents and Pull requests write, scoped to this repository."
-            exit 1
+            echo "::warning::AUTOMERGE_TOKEN is not set, so nothing merges itself. Add a fine-grained PAT with Contents and Pull requests write, scoped to this repository."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Switch auto-merge on, or off for a draft
+        if: steps.token.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
           REPO: ${{ github.repository }}
