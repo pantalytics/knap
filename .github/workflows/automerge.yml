@@ -1,0 +1,160 @@
+# A pull request that goes green merges itself.
+#
+# ── Why this does the waiting itself ────────────────────────────────────────
+# GitHub has a feature for exactly this, and we cannot have it. Auto-merge and
+# rulesets are GitHub Team and Enterprise on an organisation's private
+# repositories, and Allow auto-merge is greyed out in this repository's
+# settings. Their own rulesets page is explicit: "A ruleset is a named list of
+# rules that applies to a repository or to multiple repositories in an
+# organisation for customers on GitHub Team and GitHub Enterprise plans."
+# The day this package goes public that stops being true, and this file can be
+# replaced by two settings.
+#
+# So there is no required-check list to lean on, and this file has to decide
+# what green means. It decides the only way that does not drift: **every check
+# on the commit, whatever it is called.** Not a list somebody has to remember to
+# update. A job added to ci.yml is waited for the day it is added.
+#
+# Every refusal below ends in "do not merge", so the direction of any mistake is
+# a pull request that sits there rather than one that ships.
+#
+#   - Nothing has reported yet, or something is still running.
+#   - Anything concluded other than success, skipped or neutral.
+#   - Nothing reported at all. A commit with no checks is not a green commit.
+#   - The pull request is a draft. An agent opens its pull request as a draft,
+#     so draft is the hold and Ready for review is the act that means ship it.
+#   - The head is a fork's branch. Its checks ran code the fork wrote, and this
+#     package is meant to be public, so that is the ordinary case here rather
+#     than the exception.
+#
+# No deploy hangs off a merge here: knap-mcp-admin ships from a tag-pinned
+# dependency, not from this branch. The file is the same shape as the one in the
+# other three repositories on purpose, including AUTOMERGE_TOKEN, a fine-grained
+# personal access token scoped to this repository with Contents and Pull
+# requests write. The runner's own GITHUB_TOKEN is not used: a push it makes
+# starts no workflow run, which costs nothing here and costs the whole deploy in
+# knap-mcp-admin, so both repositories do the same thing for one reason rather
+# than two things for none.
+#
+# ── The one list that does need maintaining ─────────────────────────────────
+# `workflows:` below is what wakes this file up, not what it waits for. Add a
+# workflow that runs on pull requests and it should go in the list, or the last
+# check to finish may be one that wakes nobody and the pull request waits
+# forever. Getting it wrong cannot merge something early; it can only fail to
+# merge at all.
+#
+# workflow_run also only ever runs the copy of this file on the default branch,
+# so this does nothing until it is merged, including on its own pull request.
+#
+# The reasoning is recorded as ADR-0056 in knap-mcp-admin.
+name: Auto-merge
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  # Marking a draft ready starts no CI, so nothing else would wake up for a
+  # pull request whose checks are already green and only needed the hold lifted.
+  pull_request:
+    types: [ready_for_review]
+
+# The runner's own token is used for nothing. Every call below carries the PAT.
+permissions: {}
+
+# Never cancel: a cancelled run may be one that is mid-merge.
+concurrency:
+  group: automerge-${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref }}
+  cancel-in-progress: false
+
+jobs:
+  auto-merge:
+    # A fork's branch, from either trigger. On the pull_request path a fork is
+    # handed no secrets and this would fail on the token check; on the
+    # workflow_run path it would run with our secrets against code the fork
+    # wrote, which is the more expensive half of the same rule.
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.head_repository.full_name == github.repository) ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      - name: The token has to be ours
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::AUTOMERGE_TOKEN is not set. Add a fine-grained PAT with Contents and Pull requests write, scoped to this repository."
+            exit 1
+          fi
+
+      - name: Merge it, if everything on the commit is green
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Which pull request is this commit the head of. A push to a branch
+          # with no pull request open is not our business.
+          pr=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+                 --jq "[.[] | select(.state == \"open\" and .head.sha == \"$SHA\")][0].number // empty")
+          if [ -z "$pr" ]; then
+            echo "No open pull request has $SHA as its head. Nothing to do."
+            exit 0
+          fi
+
+          draft=$(gh api "repos/$REPO/pulls/$pr" --jq .draft)
+          if [ "$draft" = "true" ]; then
+            echo "Pull request #$pr is a draft. Holding until it is marked ready for review."
+            exit 0
+          fi
+
+          # Every check on the commit, by whatever name. filter=latest is the
+          # API's default, so a re-run replaces its earlier attempt rather than
+          # counting twice.
+          total=0; waiting=0; failed=0
+          while IFS=$'\t' read -r name status conclusion; do
+            [ -z "$name" ] && continue
+            total=$((total + 1))
+            if [ "$status" != "completed" ]; then
+              waiting=$((waiting + 1))
+              echo "waiting: $name ($status)"
+              continue
+            fi
+            case "$conclusion" in
+              success|skipped|neutral) ;;
+              *) failed=$((failed + 1)); echo "not green: $name ($conclusion)" ;;
+            esac
+          done < <(gh api --paginate "repos/$REPO/commits/$SHA/check-runs" \
+                     --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv')
+
+          # Commit statuses are the older mechanism and some tools still post
+          # them. total_count 0 means nobody posts any here, which reads as
+          # "pending" from this endpoint and must not be read as one.
+          st=$(gh api "repos/$REPO/commits/$SHA/status" --jq '"\(.total_count) \(.state)"')
+          st_count=${st%% *}; st_state=${st##* }
+          if [ "$st_count" != "0" ] && [ "$st_state" != "success" ]; then
+            echo "Commit statuses are $st_state. Not merging."
+            exit 0
+          fi
+
+          if [ "$total" -eq 0 ]; then
+            echo "::warning::No checks have reported on $SHA. A commit nothing tested is not a green commit, so #$pr is not being merged."
+            exit 0
+          fi
+          if [ "$waiting" -gt 0 ]; then
+            echo "$waiting of $total checks still running. The last one to finish wakes this again."
+            exit 0
+          fi
+          if [ "$failed" -gt 0 ]; then
+            echo "$failed of $total checks are not green. Not merging #$pr."
+            exit 0
+          fi
+
+          echo "All $total checks green. Merging #$pr."
+          # Squash: every commit on main is one pull request, and the history
+          # says so. A conflict with main fails here on purpose, because that
+          # needs somebody.
+          gh pr merge "$pr" --repo "$REPO" --squash
