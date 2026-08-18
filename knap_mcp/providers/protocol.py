@@ -83,6 +83,26 @@ class QuotaExceeded(ProviderError):
     """
 
 
+class PeriodicNotesNotConfigured(ProviderError):
+    """The vault has no periodic-notes settings for this kind.
+
+    Its own error type because it is not a failure so much as an answer: the
+    client should tell the user to switch the plugin on, not retry.
+    """
+
+
+class VaultSettingsUnavailable(PeriodicNotesNotConfigured):
+    """The vault carries no Obsidian settings, so there is nothing to read them from.
+
+    A backend may hand over notes and attachments without the ``.obsidian``
+    folder, and then no setting in it can be read either way. A subclass rather
+    than a sibling so that anything already catching the parent keeps working,
+    and its own type because the two answers are different: telling somebody the
+    plugin is off is a claim we cannot make about settings we cannot see, and it
+    sends them to change something that is probably already right.
+    """
+
+
 # --------------------------------------------------------------------------- #
 # Transport-neutral value objects.
 # --------------------------------------------------------------------------- #
@@ -439,7 +459,9 @@ class VaultProvider(Protocol):
         daily note that lands somewhere other than where the customer's Obsidian
         would have put it is a second daily note, not a daily note. Nothing is
         guessed: with no settings and no ``create``, this reports that the vault
-        has no periodic notes configured.
+        has no periodic notes configured. A backend that carries no ``.obsidian``
+        folder at all raises ``VaultSettingsUnavailable`` instead, because it
+        cannot tell an unconfigured vault from a configured one.
         """
         ...
 

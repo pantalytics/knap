@@ -21,6 +21,7 @@ from .protocol import (
     PatchMode,
     PathNotAllowedError,
     PeriodicKind,
+    PeriodicNotesNotConfigured,
     ProviderError,
     QuotaExceeded,
     RevisionMismatch,
@@ -28,6 +29,7 @@ from .protocol import (
     VaultInfo,
     VaultNotFoundError,
     VaultProvider,
+    VaultSettingsUnavailable,
     WriteMode,
 )
 
@@ -44,6 +46,7 @@ __all__ = [
     "PatchMode",
     "PathNotAllowedError",
     "PeriodicKind",
+    "PeriodicNotesNotConfigured",
     "ProviderError",
     "QuotaExceeded",
     "RevisionMismatch",
@@ -51,5 +54,6 @@ __all__ = [
     "VaultInfo",
     "VaultNotFoundError",
     "VaultProvider",
+    "VaultSettingsUnavailable",
     "WriteMode",
 ]
