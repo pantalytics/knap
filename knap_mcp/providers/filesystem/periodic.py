@@ -14,6 +14,14 @@ order Obsidian reads them:
 3. Nothing configured, in which case a read reports that and a create refuses,
    rather than inventing `YYYY-MM-DD.md` in the vault root.
 
+Case 3 comes in two shapes and they need different sentences. A vault with an
+`.obsidian` folder and no periodic-notes settings in it really does have the
+plugin switched off, and saying so is useful. A vault with no `.obsidian` folder
+at all has told us nothing, and a backend is free to hand over notes and
+attachments without it, so "the plugin is off" would be a guess. Worse, it is a
+guess that sends somebody to a setting that is probably already right, and they
+come back to the same sentence.
+
 Moment.js format tokens are what Obsidian stores, so a small translator lives
 here. Only the tokens people actually put in a daily-note format are supported;
 anything else is reported rather than approximated, because a filename that is
@@ -29,7 +37,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 from ...logging_config import get_logger
-from ..protocol import PeriodicKind, ProviderError
+from ..protocol import (
+    PeriodicKind,
+    PeriodicNotesNotConfigured,
+    ProviderError,
+    VaultSettingsUnavailable,
+)
 from . import markdown as md
 from . import paths as vault_paths
 
@@ -45,14 +58,6 @@ DEFAULT_FORMATS: Dict[str, str] = {
 }
 
 
-class PeriodicNotesNotConfigured(ProviderError):
-    """The vault has no periodic-notes settings for this kind.
-
-    Its own error type because it is not a failure so much as an answer: the
-    client should tell the user to switch the plugin on, not retry.
-    """
-
-
 def resolve(
     provider: "FilesystemVaultProvider",
     kind: PeriodicKind = "daily",
@@ -66,11 +71,7 @@ def resolve(
 
     settings = read_settings(provider.root, kind)
     if settings is None:
-        raise PeriodicNotesNotConfigured(
-            f"This vault has no {kind} notes configured. Switch on the core Daily Notes "
-            "plugin (or Periodic Notes for weekly and monthly) in Obsidian first, so the "
-            "note lands where the rest of them are."
-        )
+        raise _nothing_to_read(provider.root, kind)
 
     target = _parse_date(when)
     filename = format_moment(settings["format"], target, kind)
@@ -121,6 +122,27 @@ def read_settings(root: Path, kind: str) -> Optional[Dict[str, Any]]:
                 "template": str(core.get("template") or ""),
             }
     return None
+
+
+def _nothing_to_read(root: Path, kind: str) -> PeriodicNotesNotConfigured:
+    """The error for a kind we could not resolve, and which of the two it is.
+
+    The test is the settings folder itself, not the file for this kind: a vault
+    that has `.obsidian` and no daily-notes.json has the plugin switched off,
+    and one without `.obsidian` has not said.
+    """
+    if not (root / ".obsidian").is_dir():
+        return VaultSettingsUnavailable(
+            "There are no Obsidian settings in this vault, so nothing here says where the "
+            f"{kind} notes go. The plugin may well be on: some vaults arrive as notes and "
+            "attachments only, and the settings do not come with them. Ask the user which "
+            "folder they are in and what the filenames look like, then use that path."
+        )
+    return PeriodicNotesNotConfigured(
+        f"This vault has no {kind} notes configured. Switch on the core Daily Notes "
+        "plugin (or Periodic Notes for weekly and monthly) in Obsidian first, so the "
+        "note lands where the rest of them are."
+    )
 
 
 def _read_json(path: Path) -> Optional[Any]:

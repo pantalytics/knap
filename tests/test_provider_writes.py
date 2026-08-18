@@ -11,14 +11,28 @@ from pathlib import Path
 
 import pytest
 
+from knap_mcp.error_handling import describe
 from knap_mcp.providers.filesystem.provider import FilesystemVaultProvider
 from knap_mcp.providers.protocol import (
     NoteExistsError,
     NoteNotFoundError,
     PathNotAllowedError,
+    PeriodicNotesNotConfigured,
     ProviderError,
     RevisionMismatch,
+    VaultSettingsUnavailable,
 )
+
+
+def _vault_with(root: Path, files: dict[str, str]) -> FilesystemVaultProvider:
+    """A connected provider over a vault holding exactly these files."""
+    for rel, text in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    provider = FilesystemVaultProvider(root)
+    provider.connect()
+    return provider
 
 
 class TestWrite:
@@ -343,23 +357,46 @@ class TestPeriodicNotes:
             != provider.periodic_note("daily", "today")[0]
         )
 
-    def test_a_vault_with_no_settings_says_so(self, tmp_path: Path) -> None:
-        """Rather than inventing YYYY-MM-DD.md in the vault root."""
-        from knap_mcp.providers.filesystem.periodic import PeriodicNotesNotConfigured
+    def test_a_vault_with_settings_and_no_daily_notes_says_switch_it_on(
+        self, tmp_path: Path
+    ) -> None:
+        """The plugin really is off here, so the advice really does fix it."""
+        off = _vault_with(tmp_path / "off", {".obsidian/app.json": "{}"})
 
-        root = tmp_path / "bare"
-        root.mkdir()
-        (root / "note.md").write_text("# x\n")
-        bare = FilesystemVaultProvider(root)
-        bare.connect()
-        with pytest.raises(PeriodicNotesNotConfigured):
+        with pytest.raises(PeriodicNotesNotConfigured) as caught:
+            off.periodic_note("daily")
+
+        assert not isinstance(caught.value, VaultSettingsUnavailable)
+        assert "Switch on" in str(caught.value)
+
+    def test_a_vault_without_obsidian_settings_does_not_blame_the_plugin(
+        self, tmp_path: Path
+    ) -> None:
+        """The failure the message used to hide.
+
+        A vault can arrive as notes and attachments with no ``.obsidian`` folder,
+        and then the setting cannot be read either way. Telling somebody to
+        switch Daily Notes on sends them to change something that is already
+        right, and the tool says the same thing when they come back.
+        """
+        bare = _vault_with(tmp_path / "bare", {"note.md": "# x\n"})
+
+        with pytest.raises(VaultSettingsUnavailable) as caught:
             bare.periodic_note("daily")
 
-    def test_weekly_needs_the_periodic_notes_plugin(self, provider) -> None:
-        from knap_mcp.providers.filesystem.periodic import PeriodicNotesNotConfigured
+        message = str(caught.value)
+        assert "no Obsidian settings in this vault" in message
+        assert "witch on" not in message, "there is nothing here to switch on"
+        assert "has no daily notes configured" not in message, "we cannot know that"
+        assert describe(caught.value) == message, "and that is the sentence a client sees"
 
-        with pytest.raises(PeriodicNotesNotConfigured):
+    def test_weekly_needs_the_periodic_notes_plugin(self, provider) -> None:
+        with pytest.raises(PeriodicNotesNotConfigured) as caught:
             provider.periodic_note("weekly")
+
+        assert not isinstance(caught.value, VaultSettingsUnavailable), (
+            "this vault has settings, they just do not cover weekly"
+        )
 
     def test_the_periodic_notes_plugin_wins_over_daily_notes(self, provider) -> None:
         plugin = provider.root / ".obsidian" / "plugins" / "periodic-notes"

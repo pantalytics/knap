@@ -33,9 +33,12 @@ class PeriodicToolsMixin(VaultToolBase):
             Then vault_append_note against the path this returns is how a
             captured thought reaches today's note.
 
-            If the vault has no periodic notes configured, this says so. Do not
-            invent a path: tell the user to switch on Daily Notes in Obsidian, so
-            the whole vault agrees where they go.
+            When the path cannot be resolved, this says why, and the two reasons
+            need different answers. A vault with the plugin switched off is a
+            vault where switching Daily Notes on in Obsidian fixes it. A vault
+            that carries no Obsidian settings cannot be fixed that way and the
+            refusal says so. Pass on what it tells you rather than sending the
+            user to a setting, and never invent a path.
 
             Args:
                 date: ISO date (YYYY-MM-DD), or "today", "yesterday",
